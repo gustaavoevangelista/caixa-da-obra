@@ -70,6 +70,11 @@ type MetaState = {
 	selectedProject: string;
 };
 
+type SavedCategories = {
+	expense: Category[];
+	income: Category[];
+};
+
 const EXPENSE_CATEGORIES: Category[] = [
 	{ id: 'materials', label: 'Materiais', tag: 'MAT' },
 	{ id: 'tools', label: 'Ferramentas e Equip.', tag: 'TLS' },
@@ -164,10 +169,17 @@ export default function SiteLedger() {
 	const [saveError, setSaveError] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [selectedProject, setSelectedProject] = useState(GENERAL);
+	const [categories, setCategories] = useState<SavedCategories>({
+		expense: EXPENSE_CATEGORIES,
+		income: INCOME_CATEGORIES,
+	});
 	const [addProjectOpen, setAddProjectOpen] = useState(false);
 	const [newProjectName, setNewProjectName] = useState('');
 	const [manageOpen, setManageOpen] = useState(false);
 	const [manageConfirmId, setManageConfirmId] = useState<string | null>(null);
+	const [newCategoryLabel, setNewCategoryLabel] = useState('');
+	const [newCategoryType, setNewCategoryType] = useState<TransactionType>('expense');
+	const [manageConfirmCatId, setManageConfirmCatId] = useState<string | null>(null);
 	const chipScrollRef = useRef<HTMLDivElement | null>(null);
 	const dragState = useRef({
 		isDown: false,
@@ -222,9 +234,17 @@ export default function SiteLedger() {
 			try {
 				const metaRes = await storageApi.get(META_KEY, false);
 				if (metaRes?.value) {
-					const meta = JSON.parse(metaRes.value) as MetaState;
+					const meta = JSON.parse(metaRes.value) as MetaState & {
+						categories?: SavedCategories;
+					};
 					setProjects(meta.projects || []);
 					setSelectedProject(meta.selectedProject || GENERAL);
+					setCategories(
+						meta.categories || {
+							expense: EXPENSE_CATEGORIES,
+							income: INCOME_CATEGORIES,
+						},
+					);
 				}
 			} catch {
 				// no existing meta yet
@@ -250,20 +270,32 @@ export default function SiteLedger() {
 			setProjects(nextProjects);
 			setSelectedProject(nextSelected);
 			try {
-				await storageApi.set(
-					META_KEY,
-					JSON.stringify({
-						projects: nextProjects,
-						selectedProject: nextSelected,
-					}),
-					false,
-				);
+				const metaRes = await storageApi.get(META_KEY, false);
+				const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
+				meta.projects = nextProjects;
+				meta.selectedProject = nextSelected;
+				await storageApi.set(META_KEY, JSON.stringify(meta), false);
 			} catch (error) {
 				console.error('Storage error:', error);
 			}
 		},
 		[],
 	);
+
+const persistCategories = useCallback(
+	async (next: SavedCategories) => {
+		setCategories(next);
+		try {
+			const metaRes = await storageApi.get(META_KEY, false);
+			const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
+			meta.categories = next;
+			await storageApi.set(META_KEY, JSON.stringify(meta), false);
+		} catch (err) {
+			console.error('Storage error:', err);
+		}
+	},
+	[],
+);
 
 	const selectProject = (id: string) => persistMeta(projects, id);
 
@@ -366,21 +398,27 @@ export default function SiteLedger() {
 		setConfirmDeleteId(null);
 	};
 
-	const balance = useMemo(
+	const scopedForStats = useMemo(
 		() =>
-			transactions.reduce(
-				(acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount),
-				0,
-			),
-		[transactions],
+			selectedProject === GENERAL
+				? transactions
+				: transactions.filter((t) => t.projectId === selectedProject),
+		[transactions, selectedProject],
 	);
+
+	const balance = useMemo(() => {
+		return scopedForStats.reduce(
+			(acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount),
+			0,
+		);
+	}, [scopedForStats]);
 
 	const thisMonthTotals = useMemo(() => {
 		const y = now.getFullYear();
 		const m = now.getMonth();
 		let income = 0;
 		let expense = 0;
-		transactions.forEach((t) => {
+		scopedForStats.forEach((t) => {
 			const d = new Date(t.createdAt);
 			if (d.getFullYear() === y && d.getMonth() === m) {
 				if (t.type === 'income') income += t.amount;
@@ -388,7 +426,7 @@ export default function SiteLedger() {
 			}
 		});
 		return { income, expense };
-	}, [transactions, now]);
+	}, [scopedForStats, now]);
 
 	const scopedTransactions = useMemo(
 		() =>
@@ -495,7 +533,7 @@ export default function SiteLedger() {
 		[reportMonthDate],
 	);
 	const activeCats =
-		txType === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+		txType === 'expense' ? categories.expense : categories.income;
 	const selectedProjectName =
 		selectedProject === GENERAL
 			? 'Geral'
@@ -610,6 +648,38 @@ export default function SiteLedger() {
 			</div>
 		</div>
 	);
+
+const handleAddCategory = useCallback(() => {
+	const label = newCategoryLabel.trim();
+	if (!label) return;
+	const type = newCategoryType;
+	const baseId = label
+		.toLowerCase()
+		.replace(/\s+/g, '_')
+		.replace(/[^a-z0-9_]/g, '');
+	let id = baseId || `cat_${Date.now()}`;
+	if (categories[type].some((c) => c.id === id)) id = `${id}_${Date.now()}`;
+	const tag = label.slice(0, 3).toUpperCase();
+	const newCat: Category = { id, label, tag };
+	const next: SavedCategories = {
+		...categories,
+		[type]: [newCat, ...categories[type]],
+	} as SavedCategories;
+	persistCategories(next);
+	setNewCategoryLabel('');
+}, [newCategoryLabel, newCategoryType, categories, persistCategories]);
+
+const handleDeleteCategory = useCallback(
+	(type: TransactionType, id: string) => {
+		const next: SavedCategories = {
+			...categories,
+			[type]: categories[type].filter((c) => c.id !== id),
+		} as SavedCategories;
+		persistCategories(next);
+		setManageConfirmCatId(null);
+	},
+	[categories, persistCategories],
+);
 
 	return (
 		<div
@@ -1233,6 +1303,15 @@ export default function SiteLedger() {
 										{c.label}
 									</button>
 								))}
+
+								{/* Category management buttons */}
+								<button
+									className='px-3 py-2 rounded-lg text-xs sl-chip'
+									style={{ background: 'var(--bg-card)', color: 'var(--text-dim)', border: '1px solid var(--line)' }}
+									onClick={() => setManageOpen(true)}
+									title='Manage categories'>
+									<Settings2 size={12} />
+								</button>
 							</div>
 
 							{/* Description */}
@@ -1549,6 +1628,96 @@ export default function SiteLedger() {
 										)}
 									</div>
 								))}
+							</div>
+
+							{/* Categories management */}
+							<div className='mt-6'>
+								<div className='flex items-center justify-between mb-3'>
+									<div className='sl-display text-xl' style={{ color: 'var(--yellow)' }}>
+										GERIR CATEGORIAS
+									</div>
+								</div>
+								<div className='rounded-xl p-4' style={{ background: 'var(--bg-card)', border: '1px solid var(--line)' }}>
+									<div className='mb-3'>
+										<input
+											value={newCategoryLabel}
+											onChange={(e) => setNewCategoryLabel(e.target.value)}
+											placeholder='Nome da categoria (ex. Rebarcas)'
+											className='w-full rounded-lg px-3 py-2.5 text-sm mb-2 outline-none'
+											style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)', color: 'var(--text)' }}
+											onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+										/>
+										<div className='flex items-center gap-2 mb-2'>
+											<button
+												onClick={() => setNewCategoryType('expense')}
+												className='px-3 py-2 rounded-lg text-xs'
+												style={{ background: newCategoryType === 'expense' ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryType === 'expense' ? '#1c1b19' : 'var(--text)' }}>
+												Despesa
+											</button>
+											<button
+												onClick={() => setNewCategoryType('income')}
+												className='px-3 py-2 rounded-lg text-xs'
+												style={{ background: newCategoryType === 'income' ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryType === 'income' ? '#1c1b19' : 'var(--text)' }}>
+												Receita
+											</button>
+											<div className='flex-1' />
+											<button
+												onClick={handleAddCategory}
+												className='px-3 py-2 rounded-lg text-xs font-bold'
+												style={{ background: newCategoryLabel.trim() ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryLabel.trim() ? '#1c1b19' : 'var(--text-dim)' }}>
+												Adicionar
+											</button>
+										</div>
+									</div>
+
+									<div className='space-y-3'>
+										{/* Expense categories */}
+										<div>
+											<div className='text-xs text-[10px] tracking-widest' style={{ color: 'var(--text-dim)', marginBottom: 6 }}>DESPESAS</div>
+											{categories.expense.map((c) => (
+												<div key={c.id} className='flex items-center justify-between px-3 py-2 rounded-md' style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)' }}>
+													<div className='min-w-0'>
+														<div className='text-sm truncate'>{c.label}</div>
+														<div className='text-[10px]' style={{ color: 'var(--text-dim)' }}>{c.tag}</div>
+													</div>
+													<div className='flex gap-2'>
+														{manageConfirmCatId === c.id ? (
+															<>
+																<button onClick={() => setManageConfirmCatId(null)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Cancelar</button>
+																<button onClick={() => handleDeleteCategory('expense', c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--orange)', color: '#1c1b19' }}>Excluir</button>
+															</>
+														) : (
+															<button onClick={() => setManageConfirmCatId(c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}><Trash2 size={14} color='var(--orange)' /></button>
+															)}
+													</div>
+												</div>
+											))}
+										</div>
+
+										{/* Income categories */}
+										<div>
+											<div className='text-xs text-[10px] tracking-widest' style={{ color: 'var(--text-dim)', marginBottom: 6 }}>RECEITAS</div>
+											{categories.income.map((c) => (
+												<div key={c.id} className='flex items-center justify-between px-3 py-2 rounded-md' style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)' }}>
+													<div className='min-w-0'>
+														<div className='text-sm truncate'>{c.label}</div>
+														<div className='text-[10px]' style={{ color: 'var(--text-dim)' }}>{c.tag}</div>
+													</div>
+													<div className='flex gap-2'>
+														{manageConfirmCatId === c.id ? (
+															<>
+																<button onClick={() => setManageConfirmCatId(null)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Cancelar</button>
+																<button onClick={() => handleDeleteCategory('income', c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--orange)', color: '#1c1b19' }}>Excluir</button>
+															</>
+														) : (
+															<button onClick={() => setManageConfirmCatId(c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}><Trash2 size={14} color='var(--orange)' /></button>
+															)}
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								</div>
 							</div>
 						</div>
 					</div>
