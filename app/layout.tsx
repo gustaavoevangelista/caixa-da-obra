@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-	title: 'Caixa da Obra',
+	title: 'Flux Finance',
 	description:
 		'Um livro de obras e rastreador de despesas para finanças de canteiros de obras.',
 	manifest: '/manifest.webmanifest',

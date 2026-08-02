@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
 	return {
-		name: 'Caixa da Obra',
-		short_name: 'Caixa da Obra',
+		name: 'Flux Finance',
+		short_name: 'Flux Finance',
 		description:
 			'Um livro de obras e rastreador de despesas para finanças de canteiros de obras.',
 		start_url: '/',

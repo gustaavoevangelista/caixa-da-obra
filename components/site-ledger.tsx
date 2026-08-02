@@ -22,6 +22,19 @@ import {
 	Flag,
 	RotateCcw,
 } from 'lucide-react';
+import {
+	buildReportData,
+	getMonthPeriod,
+	getYearPeriod,
+	type ReportData,
+	type ReportPeriod,
+} from './reporting';
+import { PRINT_WINDOW_FEATURES } from './print-window';
+import {
+	EXPORT_REPORT_LABEL,
+	EXPORT_REPORT_OPTIONS,
+	type ExportReportMode,
+} from './export-options';
 
 declare global {
 	interface Window {
@@ -167,6 +180,8 @@ export default function SiteLedger() {
 	const [monthOffset, setMonthOffset] = useState(0);
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [saveError, setSaveError] = useState(false);
+	const [exportError, setExportError] = useState(false);
+	const [exportMenuOpen, setExportMenuOpen] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [selectedProject, setSelectedProject] = useState(GENERAL);
 	const [categories, setCategories] = useState<SavedCategories>({
@@ -470,59 +485,14 @@ const persistCategories = useCallback(
 		[now, monthOffset],
 	);
 
-	const reportData = useMemo(() => {
-		const y = reportMonthDate.getFullYear();
-		const m = reportMonthDate.getMonth();
-		const items = scopedTransactions.filter((t) => {
-			const d = new Date(t.createdAt);
-			return d.getFullYear() === y && d.getMonth() === m;
-		});
-		let income = 0;
-		let expense = 0;
-		const byCatExpense: Record<
-			string,
-			{ label: string; tag: string; total: number }
-		> = {};
-		const byCatIncome: Record<
-			string,
-			{ label: string; tag: string; total: number }
-		> = {};
-		items.forEach((t) => {
-			if (t.type === 'income') {
-				income += t.amount;
-				byCatIncome[t.category] = byCatIncome[t.category] || {
-					label: t.categoryLabel,
-					tag: t.categoryTag,
-					total: 0,
-				};
-				byCatIncome[t.category].total += t.amount;
-			} else {
-				expense += t.amount;
-				byCatExpense[t.category] = byCatExpense[t.category] || {
-					label: t.categoryLabel,
-					tag: t.categoryTag,
-					total: 0,
-				};
-				byCatExpense[t.category].total += t.amount;
-			}
-		});
-		const catArr = Object.values(byCatExpense).sort(
-			(a, b) => b.total - a.total,
-		);
-		const incomeCatArr = Object.values(byCatIncome).sort(
-			(a, b) => b.total - a.total,
-		);
-		return {
-			income,
-			expense,
-			net: income - expense,
-			catArr,
-			maxCat: catArr.length ? catArr[0].total : 0,
-			incomeCatArr,
-			maxIncomeCat: incomeCatArr.length ? incomeCatArr[0].total : 0,
-			count: items.length,
-		};
-	}, [scopedTransactions, reportMonthDate]);
+	const reportPeriod = useMemo(
+		() => getMonthPeriod(reportMonthDate),
+		[reportMonthDate],
+	);
+	const reportData = useMemo(
+		() => buildReportData(scopedTransactions, reportPeriod),
+		[scopedTransactions, reportPeriod],
+	);
 
 	const currentMonthLabel = useMemo(
 		() =>
@@ -539,6 +509,116 @@ const persistCategories = useCallback(
 			? 'Geral'
 			: projects.find((p) => p.id === selectedProject)?.name || 'Geral';
 
+	const escapeHtml = (value: string) =>
+		value
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
+
+	const renderCategoryRows = (items: ReportData['catArr']) =>
+		items.length
+			? items
+					.map(
+						(item) =>
+							`<tr><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.tag)}</td><td class="money">€${formatMoney(item.total)}</td></tr>`,
+					)
+					.join('')
+			: '<tr><td colspan="3" class="muted">Sem entradas.</td></tr>';
+
+	const renderTransactionRows = (items: ReportData['items']) =>
+		items.length
+			? items
+					.map((item) => {
+						const date = new Date(item.createdAt).toLocaleDateString(
+							'pt-PT',
+						);
+						const sign = item.type === 'income' ? '+' : '-';
+						return `<tr><td>${escapeHtml(date)}</td><td>${escapeHtml(item.categoryLabel)}</td><td>${escapeHtml(item.description || '-')}</td><td class="money">${sign}€${formatMoney(item.amount)}</td></tr>`;
+					})
+					.join('')
+			: '<tr><td colspan="4" class="muted">Sem entradas neste periodo.</td></tr>';
+
+	const buildPrintableReportHtml = (
+		title: string,
+		projectName: string,
+		period: ReportPeriod,
+		data: ReportData,
+	) => `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<title>${escapeHtml(title)}</title>
+	<style>
+		body { font-family: Arial, sans-serif; color: #1f2933; margin: 32px; }
+		header { border-bottom: 2px solid #d6a900; padding-bottom: 16px; margin-bottom: 24px; }
+		h1 { margin: 0 0 8px; font-size: 24px; }
+		h2 { margin: 28px 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; }
+		.meta, .muted { color: #6b7280; font-size: 12px; }
+		.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 18px 0 22px; }
+		.card { border: 1px solid #d8dee4; border-radius: 8px; padding: 12px; }
+		.label { color: #6b7280; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+		.value { margin-top: 6px; font-size: 18px; font-weight: 700; }
+		table { width: 100%; border-collapse: collapse; font-size: 12px; }
+		th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 6px; text-align: left; vertical-align: top; }
+		th { color: #6b7280; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+		.money { text-align: right; white-space: nowrap; }
+		@media print { body { margin: 20mm; } button { display: none; } }
+	</style>
+</head>
+<body>
+	<header>
+		<h1>${escapeHtml(title)}</h1>
+		<div class="meta">Projeto: ${escapeHtml(projectName)}</div>
+		<div class="meta">Periodo: ${escapeHtml(period.label)}</div>
+		<div class="meta">Gerado em: ${escapeHtml(new Date().toLocaleString('pt-PT'))}</div>
+	</header>
+	<section class="summary">
+		<div class="card"><div class="label">Receita</div><div class="value">€${formatMoney(data.income)}</div></div>
+		<div class="card"><div class="label">Despesa</div><div class="value">€${formatMoney(data.expense)}</div></div>
+		<div class="card"><div class="label">Saldo liquido</div><div class="value">€${formatMoney(data.net)}</div></div>
+	</section>
+	<div class="meta">${data.count} ${data.count === 1 ? 'entrada' : 'entradas'}</div>
+	<h2>Receita por categoria</h2>
+	<table><thead><tr><th>Categoria</th><th>Tag</th><th class="money">Total</th></tr></thead><tbody>${renderCategoryRows(data.incomeCatArr)}</tbody></table>
+	<h2>Despesas por categoria</h2>
+	<table><thead><tr><th>Categoria</th><th>Tag</th><th class="money">Total</th></tr></thead><tbody>${renderCategoryRows(data.catArr)}</tbody></table>
+	<h2>Entradas</h2>
+	<table><thead><tr><th>Data</th><th>Categoria</th><th>Descricao</th><th class="money">Valor</th></tr></thead><tbody>${renderTransactionRows(data.items)}</tbody></table>
+</body>
+</html>`;
+
+	const exportReportPdf = (mode: ExportReportMode) => {
+		const period =
+			mode === 'month'
+				? reportPeriod
+				: getYearPeriod(reportMonthDate.getFullYear());
+		const data =
+			mode === 'month'
+				? reportData
+				: buildReportData(scopedTransactions, period);
+		const title =
+			mode === 'month' ? 'Relatorio mensal' : 'Relatorio anual';
+		const printWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
+
+		if (!printWindow) {
+			setExportMenuOpen(false);
+			setExportError(true);
+			return;
+		}
+
+		setExportMenuOpen(false);
+		setExportError(false);
+		printWindow.document.open();
+		printWindow.document.write(
+			buildPrintableReportHtml(title, selectedProjectName, period, data),
+		);
+		printWindow.document.close();
+		printWindow.focus();
+		printWindow.print();
+	};
+
 	const projectSelector = (
 		<div>
 			<div className='flex items-center justify-between px-5 pb-2 -mt-1'>
@@ -547,30 +627,32 @@ const persistCategories = useCallback(
 					style={{ color: 'var(--text-dim)' }}>
 					PROJECT
 				</div>
-				<div className='flex items-center gap-2'>
-					<button
-						onClick={() => setAddProjectOpen(true)}
-						className='w-7 h-7 rounded-md flex items-center justify-center'
-						style={{
-							background: 'var(--bg-card)',
-							border: '1px dashed var(--line)',
-						}}
-						title='Add project'>
-						<Plus size={13} color='var(--text-dim)' />
-					</button>
-					{projects.length > 0 && (
+				{view !== 'reports' && (
+					<div className='flex items-center gap-2'>
 						<button
-							onClick={() => setManageOpen(true)}
+							onClick={() => setAddProjectOpen(true)}
 							className='w-7 h-7 rounded-md flex items-center justify-center'
 							style={{
 								background: 'var(--bg-card)',
-								border: '1px solid var(--line)',
+								border: '1px dashed var(--line)',
 							}}
-							title='Manage projects'>
-							<Settings2 size={12} color='var(--text-dim)' />
+							title='Add project'>
+							<Plus size={13} color='var(--text-dim)' />
 						</button>
-					)}
-				</div>
+						{projects.length > 0 && (
+							<button
+								onClick={() => setManageOpen(true)}
+								className='w-7 h-7 rounded-md flex items-center justify-center'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+								}}
+								title='Manage projects'>
+								<Settings2 size={12} color='var(--text-dim)' />
+							</button>
+						)}
+					</div>
+				)}
 			</div>
 			<div
 				ref={chipScrollRef}
@@ -726,7 +808,7 @@ const handleDeleteCategory = useCallback(
 						<div
 							className='sl-display text-3xl leading-none'
 							style={{ color: 'var(--yellow)' }}>
-							CAIXA DA OBRA
+							FLUX FINANCE
 						</div>
 						<div
 							className='text-[10px] tracking-widest mt-1'
@@ -1042,6 +1124,51 @@ const handleDeleteCategory = useCallback(
 						</div>
 
 						<div className='-mx-5'>{projectSelector}</div>
+
+						<div className='relative mb-4'>
+							<button
+								onClick={() => setExportMenuOpen((open) => !open)}
+								className='w-full rounded-lg px-3 py-3 text-[11px] font-semibold tracking-widest'
+								style={{
+									background: 'var(--yellow)',
+									color: '#1c1b19',
+								}}>
+								{EXPORT_REPORT_LABEL}
+							</button>
+							{exportMenuOpen && (
+								<div
+									className='absolute left-0 right-0 top-full z-10 mt-2 overflow-hidden rounded-lg'
+									style={{
+										background: 'var(--bg-raised)',
+										border: '1px solid var(--line)',
+										boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
+									}}>
+									{EXPORT_REPORT_OPTIONS.map((option) => (
+										<button
+											key={option.mode}
+											onClick={() => exportReportPdf(option.mode)}
+											className='w-full px-4 py-3 text-left text-xs font-semibold'
+											style={{
+												color: 'var(--text)',
+												borderBottom:
+													option.mode === 'month'
+														? '1px solid var(--line)'
+														: 'none',
+											}}>
+											{option.label}
+										</button>
+									))}
+								</div>
+							)}
+						</div>
+						{exportError && (
+							<div
+								className='text-xs mb-4'
+								style={{ color: 'var(--orange)' }}>
+								Nao foi possivel abrir a janela de impressao.
+								Permita pop-ups para exportar o PDF.
+							</div>
+						)}
 
 						<div className='grid grid-cols-3 gap-2 mb-6'>
 							<div
