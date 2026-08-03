@@ -560,14 +560,21 @@ const persistCategories = useCallback(
 		.card { border: 1px solid #d8dee4; border-radius: 8px; padding: 12px; }
 		.label { color: #6b7280; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
 		.value { margin-top: 6px; font-size: 18px; font-weight: 700; }
+		.preview-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+		.preview-toolbar button { border: 1px solid #d8dee4; background: #fff; color: #1f2933; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 12px; }
+		.preview-toolbar .primary { background: #d6a900; color: #fff; border-color: #d6a900; }
 		table { width: 100%; border-collapse: collapse; font-size: 12px; }
 		th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 6px; text-align: left; vertical-align: top; }
 		th { color: #6b7280; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
 		.money { text-align: right; white-space: nowrap; }
-		@media print { body { margin: 20mm; } button { display: none; } }
+		@media print { body { margin: 20mm; } .preview-toolbar { display: none !important; } }
 	</style>
 </head>
 <body>
+	<div class="preview-toolbar">
+		<button type="button" onclick="window.close()">Voltar ao app</button>
+		<button type="button" class="primary" onclick="window.print()">Exportar PDF</button>
+	</div>
 	<header>
 		<h1>${escapeHtml(title)}</h1>
 		<div class="meta">Projeto: ${escapeHtml(projectName)}</div>
@@ -600,9 +607,9 @@ const persistCategories = useCallback(
 				: buildReportData(scopedTransactions, period);
 		const title =
 			mode === 'month' ? 'Relatorio mensal' : 'Relatorio anual';
-		const printWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
+		const previewWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
 
-		if (!printWindow) {
+		if (!previewWindow) {
 			setExportMenuOpen(false);
 			setExportError(true);
 			return;
@@ -610,13 +617,12 @@ const persistCategories = useCallback(
 
 		setExportMenuOpen(false);
 		setExportError(false);
-		printWindow.document.open();
-		printWindow.document.write(
+		previewWindow.document.open();
+		previewWindow.document.write(
 			buildPrintableReportHtml(title, selectedProjectName, period, data),
 		);
-		printWindow.document.close();
-		printWindow.focus();
-		printWindow.print();
+		previewWindow.document.close();
+		previewWindow.focus();
 	};
 
 	const projectSelector = (
@@ -1040,7 +1046,7 @@ const handleDeleteCategory = useCallback(
 																					t.projectId,
 																			)
 																				?.name ||
-																				'Project')
+																				'Projeto')
 																		: ''}
 																</div>
 															</div>
