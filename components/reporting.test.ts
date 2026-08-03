@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
 	buildReportData,
 	getMonthPeriod,
+	getWeekPeriod,
 	getYearPeriod,
 	type ReportTransaction,
 } from './reporting.ts';
@@ -53,6 +54,25 @@ const transactions: ReportTransaction[] = [
 		projectId: 'project-b',
 	},
 ];
+
+test('buildReportData summarizes a week from provided scoped transactions', () => {
+	const report = buildReportData(
+		transactions.filter((t) => t.projectId === 'project-a'),
+		getWeekPeriod(new Date(2026, 7, 1)),
+	);
+
+	assert.equal(report.income, 1000);
+	assert.equal(report.expense, 125);
+	assert.equal(report.net, 875);
+	assert.equal(report.count, 2);
+	assert.deepEqual(report.incomeCatArr, [
+		{ label: 'Pagamento', tag: 'PAY', total: 1000 },
+	]);
+	assert.deepEqual(report.catArr, [
+		{ label: 'Materiais', tag: 'MAT', total: 125 },
+	]);
+	assert.deepEqual(report.items.map((t) => t.id), ['income-1', 'expense-1']);
+});
 
 test('buildReportData summarizes a month from provided scoped transactions', () => {
 	const report = buildReportData(

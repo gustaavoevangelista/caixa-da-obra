@@ -48,6 +48,17 @@ export function getMonthPeriod(date: Date): ReportPeriod {
 	};
 }
 
+export function getWeekPeriod(date: Date): ReportPeriod {
+	const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
+	const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+
+	return {
+		start,
+		end,
+		label: `${start.toLocaleDateString('pt-PT')} - ${end.toLocaleDateString('pt-PT')}`,
+	};
+}
+
 export function getYearPeriod(year: number): ReportPeriod {
 	return {
 		start: new Date(year, 0, 1),

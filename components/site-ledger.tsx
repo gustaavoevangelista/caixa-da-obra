@@ -15,12 +15,12 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	BarChart3,
-	Wallet,
 	Delete,
 	Layers,
 	Settings2,
 	Flag,
 	RotateCcw,
+    ArrowLeft,
 } from 'lucide-react';
 import {
 	buildReportData,
@@ -522,7 +522,7 @@ const persistCategories = useCallback(
 			? items
 					.map(
 						(item) =>
-							`<tr><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.tag)}</td><td class="money">€${formatMoney(item.total)}</td></tr>`,
+							`<tr><td data-label="Categoria">${escapeHtml(item.label)}</td><td data-label="Tag">${escapeHtml(item.tag)}</td><td class="money" data-label="Total">€${formatMoney(item.total)}</td></tr>`,
 					)
 					.join('')
 			: '<tr><td colspan="3" class="muted">Sem entradas.</td></tr>';
@@ -535,7 +535,7 @@ const persistCategories = useCallback(
 							'pt-PT',
 						);
 						const sign = item.type === 'income' ? '+' : '-';
-						return `<tr><td>${escapeHtml(date)}</td><td>${escapeHtml(item.categoryLabel)}</td><td>${escapeHtml(item.description || '-')}</td><td class="money">${sign}€${formatMoney(item.amount)}</td></tr>`;
+						return `<tr><td data-label="Data">${escapeHtml(date)}</td><td data-label="Categoria">${escapeHtml(item.categoryLabel)}</td><td data-label="Descrição">${escapeHtml(item.description || '-')}</td><td class="money" data-label="Valor">${sign}€${formatMoney(item.amount)}</td></tr>`;
 					})
 					.join('')
 			: '<tr><td colspan="4" class="muted">Sem entradas neste periodo.</td></tr>';
@@ -549,6 +549,7 @@ const persistCategories = useCallback(
 <html>
 <head>
 	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 	<title>${escapeHtml(title)}</title>
 	<style>
 		body { font-family: Arial, sans-serif; color: #1f2933; margin: 32px; }
@@ -560,13 +561,27 @@ const persistCategories = useCallback(
 		.card { border: 1px solid #d8dee4; border-radius: 8px; padding: 12px; }
 		.label { color: #6b7280; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
 		.value { margin-top: 6px; font-size: 18px; font-weight: 700; }
-		.preview-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
-		.preview-toolbar button { border: 1px solid #d8dee4; background: #fff; color: #1f2933; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 12px; }
+		.preview-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+		.preview-toolbar button { border: 1px solid #d8dee4; background: #fff; color: #1f2933; border-radius: 8px; padding: 10px 12px; cursor: pointer; font-size: 14px; min-width: 140px; min-height: 46px; font-weight: 700; }
 		.preview-toolbar .primary { background: #d6a900; color: #fff; border-color: #d6a900; }
 		table { width: 100%; border-collapse: collapse; font-size: 12px; }
 		th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 6px; text-align: left; vertical-align: top; }
 		th { color: #6b7280; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
 		.money { text-align: right; white-space: nowrap; }
+		@media (max-width: 640px) {
+			body { margin: 16px; }
+			.preview-toolbar { justify-content: stretch; }
+			.preview-toolbar button { flex: 1 1 100%; min-width: 0; }
+			.summary { grid-template-columns: 1fr; }
+			h1 { font-size: 20px; }
+			h2 { font-size: 14px; }
+			table, thead, tbody, th, td, tr { display: block; }
+			thead { display: none; }
+			tr { border-bottom: 1px solid #e5e7eb; padding: 8px 0; }
+			td { border-bottom: none; padding: 4px 0; }
+			td:before { content: attr(data-label); display: block; color: #6b7280; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+			.money { text-align: left; }
+		}
 		@media print { body { margin: 20mm; } .preview-toolbar { display: none !important; } }
 	</style>
 </head>
@@ -596,34 +611,49 @@ const persistCategories = useCallback(
 </body>
 </html>`;
 
-	const exportReportPdf = (mode: ExportReportMode) => {
-		const period =
-			mode === 'month'
-				? reportPeriod
+const exportReportPdf = (mode: ExportReportMode) => {
+	const period =
+		mode === 'week'
+			? reportPeriod
+			: mode === 'month'
+				? getMonthPeriod(reportMonthDate)
 				: getYearPeriod(reportMonthDate.getFullYear());
-		const data =
-			mode === 'month'
-				? reportData
-				: buildReportData(scopedTransactions, period);
-		const title =
-			mode === 'month' ? 'Relatorio mensal' : 'Relatorio anual';
-		const previewWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
+	const data =
+		mode === 'week'
+			? reportData
+			: buildReportData(scopedTransactions, period);
+	const title =
+		mode === 'week'
+			? 'Relatorio semanal'
+			: mode === 'month'
+				? 'Relatorio mensal'
+				: 'Relatorio anual';
 
-		if (!previewWindow) {
-			setExportMenuOpen(false);
-			setExportError(true);
-			return;
-		}
+	const html = buildPrintableReportHtml(
+		title,
+		selectedProjectName,
+		period,
+		data,
+	);
+	const blob = new Blob([html], { type: 'text/html' });
+	const url = URL.createObjectURL(blob);
 
+	const previewWindow = window.open(url, '_blank', PRINT_WINDOW_FEATURES);
+
+	if (!previewWindow) {
+		URL.revokeObjectURL(url);
 		setExportMenuOpen(false);
-		setExportError(false);
-		previewWindow.document.open();
-		previewWindow.document.write(
-			buildPrintableReportHtml(title, selectedProjectName, period, data),
-		);
-		previewWindow.document.close();
-		previewWindow.focus();
-	};
+		setExportError(true);
+		return;
+	}
+
+	setExportMenuOpen(false);
+	setExportError(false);
+	previewWindow.addEventListener('load', () => URL.revokeObjectURL(url), {
+		once: true,
+	});
+	previewWindow.focus();
+};
 
 	const projectSelector = (
 		<div>
@@ -631,7 +661,7 @@ const persistCategories = useCallback(
 				<div
 					className='text-[10px] tracking-widest'
 					style={{ color: 'var(--text-dim)' }}>
-					PROJECT
+					PROJETO
 				</div>
 				{view !== 'reports' && (
 					<div className='flex items-center gap-2'>
@@ -785,7 +815,7 @@ const handleDeleteCategory = useCallback(
           --orange: #ff6b35;
           --green: #9fd13a;
           --text: #f3efe6;
-          --text-dim: #a39d8e;
+          --text-dim: #fff;
           color: var(--text);
           background: var(--bg);
         }
@@ -832,9 +862,9 @@ const handleDeleteCategory = useCallback(
 							background: 'var(--bg-raised)',
 						}}>
 						{view === 'home' ? (
-							<BarChart3 size={19} color='var(--yellow)' />
+							<BarChart3 size={24} color='var(--yellow)' />
 						) : (
-							<Wallet size={19} color='var(--yellow)' />
+							<ArrowLeft size={24} color='var(--yellow)' />
 						)}
 					</button>
 				</div>
@@ -1157,7 +1187,7 @@ const handleDeleteCategory = useCallback(
 											style={{
 												color: 'var(--text)',
 												borderBottom:
-													option.mode === 'month'
+													option.mode === 'week'|| option.mode === 'month'
 														? '1px solid var(--line)'
 														: 'none',
 											}}>
