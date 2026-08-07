@@ -943,7 +943,8 @@ const handleDeleteCategory = useCallback(
 									<div
 										className='text-xs mt-2'
 										style={{ color: 'var(--text-dim)' }}>
-										TOQUE NO BOTÃO AMARELO PARA ADICIONAR UMA DESPESA OU RECEITA
+										TOQUE NO BOTÃO AMARELO PARA ADICIONAR
+										UMA DESPESA OU RECEITA
 									</div>
 								</div>
 							) : (
@@ -976,7 +977,8 @@ const handleDeleteCategory = useCallback(
 																style={{
 																	color: 'var(--text-dim)',
 																}}>
-																Excluir esta entrada?
+																Excluir esta
+																entrada?
 															</span>
 															<div className='flex gap-2'>
 																<button
@@ -1163,7 +1165,9 @@ const handleDeleteCategory = useCallback(
 
 						<div className='relative mb-4'>
 							<button
-								onClick={() => setExportMenuOpen((open) => !open)}
+								onClick={() =>
+									setExportMenuOpen((open) => !open)
+								}
 								className='w-full rounded-lg px-3 py-3 text-[11px] font-semibold tracking-widest'
 								style={{
 									background: 'var(--yellow)',
@@ -1177,17 +1181,21 @@ const handleDeleteCategory = useCallback(
 									style={{
 										background: 'var(--bg-raised)',
 										border: '1px solid var(--line)',
-										boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
+										boxShadow:
+											'0 12px 28px rgba(0,0,0,0.28)',
 									}}>
 									{EXPORT_REPORT_OPTIONS.map((option) => (
 										<button
 											key={option.mode}
-											onClick={() => exportReportPdf(option.mode)}
+											onClick={() =>
+												exportReportPdf(option.mode)
+											}
 											className='w-full px-4 py-3 text-left text-xs font-semibold'
 											style={{
 												color: 'var(--text)',
 												borderBottom:
-													option.mode === 'week'|| option.mode === 'month'
+													option.mode === 'week' ||
+													option.mode === 'month'
 														? '1px solid var(--line)'
 														: 'none',
 											}}>
@@ -1353,8 +1361,8 @@ const handleDeleteCategory = useCallback(
 							className='text-[11px] tracking-widest mt-6'
 							style={{ color: 'var(--text-dim)' }}>
 							{reportData.count}{' '}
-							{reportData.count === 1 ? 'ENTRADA' : 'ENTRADAS'} ESTE
-							MÊS
+							{reportData.count === 1 ? 'ENTRADA' : 'ENTRADAS'}{' '}
+							ESTE MÊS
 						</div>
 					</div>
 				)}
@@ -1373,6 +1381,9 @@ const handleDeleteCategory = useCallback(
 								background: 'var(--bg-raised)',
 								border: '1px solid var(--line)',
 								borderBottom: 'none',
+								maxHeight: '92dvh',
+								overflowY: 'auto',
+								WebkitOverflowScrolling: 'touch',
 							}}>
 							<div className='flex items-center justify-between mb-1'>
 								<div
@@ -1421,7 +1432,9 @@ const handleDeleteCategory = useCallback(
 													? '#1c1b19'
 													: 'var(--text-dim)',
 										}}>
-										{t === 'expense' ? 'DESPESA' : 'RECEITA'}
+										{t === 'expense'
+											? 'DESPESA'
+											: 'RECEITA'}
 									</button>
 								))}
 							</div>
@@ -1470,7 +1483,11 @@ const handleDeleteCategory = useCallback(
 								{/* Category management buttons */}
 								<button
 									className='px-3 py-2 rounded-lg text-xs sl-chip'
-									style={{ background: 'var(--bg-card)', color: 'var(--text-dim)', border: '1px solid var(--line)' }}
+									style={{
+										background: 'var(--bg-card)',
+										color: 'var(--text-dim)',
+										border: '1px solid var(--line)',
+									}}
 									onClick={() => setManageOpen(true)}
 									title='Manage categories'>
 									<Settings2 size={12} />
@@ -1494,7 +1511,8 @@ const handleDeleteCategory = useCallback(
 								<div
 									className='text-xs mb-3 text-center'
 									style={{ color: 'var(--orange)' }}>
-									Digite um valor e escolha uma categoria para salvar.
+									Digite um valor e escolha uma categoria para
+									salvar.
 								</div>
 							)}
 
@@ -1683,8 +1701,9 @@ const handleDeleteCategory = useCallback(
 													style={{
 														color: 'var(--text-dim)',
 													}}>
-													Excluir "{p.name}"? As entradas
-													permanecerão em Geral.
+													Excluir "{p.name}"? As
+													entradas permanecerão em
+													Geral.
 												</span>
 												<div className='flex gap-2 shrink-0 ml-2'>
 													<button
@@ -1796,38 +1815,92 @@ const handleDeleteCategory = useCallback(
 							{/* Categories management */}
 							<div className='mt-6'>
 								<div className='flex items-center justify-between mb-3'>
-									<div className='sl-display text-xl' style={{ color: 'var(--yellow)' }}>
+									<div
+										className='sl-display text-xl'
+										style={{ color: 'var(--yellow)' }}>
 										GERIR CATEGORIAS
 									</div>
 								</div>
-								<div className='rounded-xl p-4' style={{ background: 'var(--bg-card)', border: '1px solid var(--line)' }}>
+								<div
+									className='rounded-xl p-4'
+									style={{
+										background: 'var(--bg-card)',
+										border: '1px solid var(--line)',
+									}}>
 									<div className='mb-3'>
 										<input
 											value={newCategoryLabel}
-											onChange={(e) => setNewCategoryLabel(e.target.value)}
+											onChange={(e) =>
+												setNewCategoryLabel(
+													e.target.value,
+												)
+											}
 											placeholder='Nome da categoria (ex. Rebarcas)'
 											className='w-full rounded-lg px-3 py-2.5 text-sm mb-2 outline-none'
-											style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)', color: 'var(--text)' }}
-											onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+											style={{
+												background: 'var(--bg-raised)',
+												border: '1px solid var(--line)',
+												color: 'var(--text)',
+											}}
+											onKeyDown={(e) =>
+												e.key === 'Enter' &&
+												handleAddCategory()
+											}
 										/>
 										<div className='flex items-center gap-2 mb-2'>
 											<button
-												onClick={() => setNewCategoryType('expense')}
+												onClick={() =>
+													setNewCategoryType(
+														'expense',
+													)
+												}
 												className='px-3 py-2 rounded-lg text-xs'
-												style={{ background: newCategoryType === 'expense' ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryType === 'expense' ? '#1c1b19' : 'var(--text)' }}>
+												style={{
+													background:
+														newCategoryType ===
+														'expense'
+															? 'var(--yellow)'
+															: 'var(--bg-card)',
+													color:
+														newCategoryType ===
+														'expense'
+															? '#1c1b19'
+															: 'var(--text)',
+												}}>
 												Despesa
 											</button>
 											<button
-												onClick={() => setNewCategoryType('income')}
+												onClick={() =>
+													setNewCategoryType('income')
+												}
 												className='px-3 py-2 rounded-lg text-xs'
-												style={{ background: newCategoryType === 'income' ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryType === 'income' ? '#1c1b19' : 'var(--text)' }}>
+												style={{
+													background:
+														newCategoryType ===
+														'income'
+															? 'var(--yellow)'
+															: 'var(--bg-card)',
+													color:
+														newCategoryType ===
+														'income'
+															? '#1c1b19'
+															: 'var(--text)',
+												}}>
 												Receita
 											</button>
 											<div className='flex-1' />
 											<button
 												onClick={handleAddCategory}
 												className='px-3 py-2 rounded-lg text-xs font-bold'
-												style={{ background: newCategoryLabel.trim() ? 'var(--yellow)' : 'var(--bg-card)', color: newCategoryLabel.trim() ? '#1c1b19' : 'var(--text-dim)' }}>
+												style={{
+													background:
+														newCategoryLabel.trim()
+															? 'var(--yellow)'
+															: 'var(--bg-card)',
+													color: newCategoryLabel.trim()
+														? '#1c1b19'
+														: 'var(--text-dim)',
+												}}>
 												Adicionar
 											</button>
 										</div>
@@ -1836,22 +1909,88 @@ const handleDeleteCategory = useCallback(
 									<div className='space-y-3'>
 										{/* Expense categories */}
 										<div>
-											<div className='text-xs text-[10px] tracking-widest' style={{ color: 'var(--text-dim)', marginBottom: 6 }}>DESPESAS</div>
+											<div
+												className='text-xs text-[10px] tracking-widest'
+												style={{
+													color: 'var(--text-dim)',
+													marginBottom: 6,
+												}}>
+												DESPESAS
+											</div>
 											{categories.expense.map((c) => (
-												<div key={c.id} className='flex items-center justify-between px-3 py-2 rounded-md' style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)' }}>
+												<div
+													key={c.id}
+													className='flex items-center justify-between px-3 py-2 rounded-md'
+													style={{
+														background:
+															'var(--bg-raised)',
+														border: '1px solid var(--line)',
+													}}>
 													<div className='min-w-0'>
-														<div className='text-sm truncate'>{c.label}</div>
-														<div className='text-[10px]' style={{ color: 'var(--text-dim)' }}>{c.tag}</div>
+														<div className='text-sm truncate'>
+															{c.label}
+														</div>
+														<div
+															className='text-[10px]'
+															style={{
+																color: 'var(--text-dim)',
+															}}>
+															{c.tag}
+														</div>
 													</div>
 													<div className='flex gap-2'>
-														{manageConfirmCatId === c.id ? (
+														{manageConfirmCatId ===
+														c.id ? (
 															<>
-																<button onClick={() => setManageConfirmCatId(null)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Cancelar</button>
-																<button onClick={() => handleDeleteCategory('expense', c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--orange)', color: '#1c1b19' }}>Excluir</button>
+																<button
+																	onClick={() =>
+																		setManageConfirmCatId(
+																			null,
+																		)
+																	}
+																	className='px-3 py-1 rounded-md'
+																	style={{
+																		background:
+																			'var(--bg-card)',
+																		color: 'var(--text)',
+																	}}>
+																	Cancelar
+																</button>
+																<button
+																	onClick={() =>
+																		handleDeleteCategory(
+																			'expense',
+																			c.id,
+																		)
+																	}
+																	className='px-3 py-1 rounded-md'
+																	style={{
+																		background:
+																			'var(--orange)',
+																		color: '#1c1b19',
+																	}}>
+																	Excluir
+																</button>
 															</>
 														) : (
-															<button onClick={() => setManageConfirmCatId(c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}><Trash2 size={14} color='var(--orange)' /></button>
-															)}
+															<button
+																onClick={() =>
+																	setManageConfirmCatId(
+																		c.id,
+																	)
+																}
+																className='px-3 py-1 rounded-md'
+																style={{
+																	background:
+																		'var(--bg-card)',
+																	color: 'var(--text)',
+																}}>
+																<Trash2
+																	size={14}
+																	color='var(--orange)'
+																/>
+															</button>
+														)}
 													</div>
 												</div>
 											))}
@@ -1859,22 +1998,88 @@ const handleDeleteCategory = useCallback(
 
 										{/* Income categories */}
 										<div>
-											<div className='text-xs text-[10px] tracking-widest' style={{ color: 'var(--text-dim)', marginBottom: 6 }}>RECEITAS</div>
+											<div
+												className='text-xs text-[10px] tracking-widest'
+												style={{
+													color: 'var(--text-dim)',
+													marginBottom: 6,
+												}}>
+												RECEITAS
+											</div>
 											{categories.income.map((c) => (
-												<div key={c.id} className='flex items-center justify-between px-3 py-2 rounded-md' style={{ background: 'var(--bg-raised)', border: '1px solid var(--line)' }}>
+												<div
+													key={c.id}
+													className='flex items-center justify-between px-3 py-2 rounded-md'
+													style={{
+														background:
+															'var(--bg-raised)',
+														border: '1px solid var(--line)',
+													}}>
 													<div className='min-w-0'>
-														<div className='text-sm truncate'>{c.label}</div>
-														<div className='text-[10px]' style={{ color: 'var(--text-dim)' }}>{c.tag}</div>
+														<div className='text-sm truncate'>
+															{c.label}
+														</div>
+														<div
+															className='text-[10px]'
+															style={{
+																color: 'var(--text-dim)',
+															}}>
+															{c.tag}
+														</div>
 													</div>
 													<div className='flex gap-2'>
-														{manageConfirmCatId === c.id ? (
+														{manageConfirmCatId ===
+														c.id ? (
 															<>
-																<button onClick={() => setManageConfirmCatId(null)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}>Cancelar</button>
-																<button onClick={() => handleDeleteCategory('income', c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--orange)', color: '#1c1b19' }}>Excluir</button>
+																<button
+																	onClick={() =>
+																		setManageConfirmCatId(
+																			null,
+																		)
+																	}
+																	className='px-3 py-1 rounded-md'
+																	style={{
+																		background:
+																			'var(--bg-card)',
+																		color: 'var(--text)',
+																	}}>
+																	Cancelar
+																</button>
+																<button
+																	onClick={() =>
+																		handleDeleteCategory(
+																			'income',
+																			c.id,
+																		)
+																	}
+																	className='px-3 py-1 rounded-md'
+																	style={{
+																		background:
+																			'var(--orange)',
+																		color: '#1c1b19',
+																	}}>
+																	Excluir
+																</button>
 															</>
 														) : (
-															<button onClick={() => setManageConfirmCatId(c.id)} className='px-3 py-1 rounded-md' style={{ background: 'var(--bg-card)', color: 'var(--text)' }}><Trash2 size={14} color='var(--orange)' /></button>
-															)}
+															<button
+																onClick={() =>
+																	setManageConfirmCatId(
+																		c.id,
+																	)
+																}
+																className='px-3 py-1 rounded-md'
+																style={{
+																	background:
+																		'var(--bg-card)',
+																	color: 'var(--text)',
+																}}>
+																<Trash2
+																	size={14}
+																	color='var(--orange)'
+																/>
+															</button>
+														)}
 													</div>
 												</div>
 											))}
