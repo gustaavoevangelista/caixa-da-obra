@@ -390,7 +390,7 @@ const persistCategories = useCallback(
 		}
 		const value = Number.parseFloat(amount);
 		const cats =
-			txType === 'expense' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+			txType === 'expense' ? categories.expense : categories.income;
 		const catObj = cats.find((c) => c.id === category);
 		if (!catObj) return;
 		const entry: Transaction = {
