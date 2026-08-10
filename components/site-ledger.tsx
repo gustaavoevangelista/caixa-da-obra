@@ -20,7 +20,7 @@ import {
 	Settings2,
 	Flag,
 	RotateCcw,
-    ArrowLeft,
+	ArrowLeft,
 } from 'lucide-react';
 import {
 	buildReportData,
@@ -178,8 +178,12 @@ export default function SiteLedger() {
 	const [category, setCategory] = useState<string | null>(null);
 	const [description, setDescription] = useState('');
 	const [monthOffset, setMonthOffset] = useState(0);
-	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 	const [saveError, setSaveError] = useState(false);
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [sheetDeleteConfirm, setSheetDeleteConfirm] = useState(false);
+	const [longPressId, setLongPressId] = useState<string | null>(null);
+	const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const longPressFired = useRef(false);
 	const [exportError, setExportError] = useState(false);
 	const [exportMenuOpen, setExportMenuOpen] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
@@ -193,8 +197,11 @@ export default function SiteLedger() {
 	const [manageOpen, setManageOpen] = useState(false);
 	const [manageConfirmId, setManageConfirmId] = useState<string | null>(null);
 	const [newCategoryLabel, setNewCategoryLabel] = useState('');
-	const [newCategoryType, setNewCategoryType] = useState<TransactionType>('expense');
-	const [manageConfirmCatId, setManageConfirmCatId] = useState<string | null>(null);
+	const [newCategoryType, setNewCategoryType] =
+		useState<TransactionType>('expense');
+	const [manageConfirmCatId, setManageConfirmCatId] = useState<string | null>(
+		null,
+	);
 	const chipScrollRef = useRef<HTMLDivElement | null>(null);
 	const dragState = useRef({
 		isDown: false,
@@ -297,8 +304,7 @@ export default function SiteLedger() {
 		[],
 	);
 
-const persistCategories = useCallback(
-	async (next: SavedCategories) => {
+	const persistCategories = useCallback(async (next: SavedCategories) => {
 		setCategories(next);
 		try {
 			const metaRes = await storageApi.get(META_KEY, false);
@@ -308,9 +314,7 @@ const persistCategories = useCallback(
 		} catch (err) {
 			console.error('Storage error:', err);
 		}
-	},
-	[],
-);
+	}, []);
 
 	const selectProject = (id: string) => persistMeta(projects, id);
 
@@ -354,10 +358,23 @@ const persistCategories = useCallback(
 		setCategory(null);
 		setDescription('');
 		setSaveError(false);
+		setEditingId(null);
+		setSheetDeleteConfirm(false);
 	};
 
 	const openSheet = () => {
 		resetSheet();
+		setSheetOpen(true);
+	};
+
+	const openEditSheet = (t: Transaction) => {
+		setTxType(t.type);
+		setAmount(String(t.amount));
+		setCategory(t.category);
+		setDescription(t.description || '');
+		setSaveError(false);
+		setEditingId(t.id);
+		setSheetDeleteConfirm(false);
 		setSheetOpen(true);
 	};
 
@@ -393,6 +410,26 @@ const persistCategories = useCallback(
 			txType === 'expense' ? categories.expense : categories.income;
 		const catObj = cats.find((c) => c.id === category);
 		if (!catObj) return;
+
+		if (editingId) {
+			const next = transactions.map((t) =>
+				t.id === editingId
+					? {
+							...t,
+							type: txType,
+							amount: value,
+							category: catObj.id,
+							categoryLabel: catObj.label,
+							categoryTag: catObj.tag,
+							description: description.trim(),
+						}
+					: t,
+			);
+			await persist(next);
+			closeSheet();
+			return;
+		}
+
 		const entry: Transaction = {
 			id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
 			type: txType,
@@ -410,7 +447,33 @@ const persistCategories = useCallback(
 
 	const handleDelete = async (id: string) => {
 		await persist(transactions.filter((t) => t.id !== id));
-		setConfirmDeleteId(null);
+		setLongPressId(null);
+	};
+
+	const handleDeleteFromSheet = async () => {
+		if (!editingId) return;
+		await persist(transactions.filter((t) => t.id !== editingId));
+		closeSheet();
+	};
+
+	const startLongPress = (id: string) => {
+		longPressFired.current = false;
+		longPressTimer.current = setTimeout(() => {
+			longPressFired.current = true;
+			setLongPressId(id);
+		}, 550);
+	};
+
+	const cancelLongPress = () => {
+		if (longPressTimer.current) clearTimeout(longPressTimer.current);
+	};
+
+	const handleRowClick = (t: Transaction) => {
+		if (longPressFired.current) {
+			longPressFired.current = false;
+			return;
+		}
+		openEditSheet(t);
 	};
 
 	const scopedForStats = useMemo(
@@ -531,9 +594,9 @@ const persistCategories = useCallback(
 		items.length
 			? items
 					.map((item) => {
-						const date = new Date(item.createdAt).toLocaleDateString(
-							'pt-PT',
-						);
+						const date = new Date(
+							item.createdAt,
+						).toLocaleDateString('pt-PT');
 						const sign = item.type === 'income' ? '+' : '-';
 						return `<tr><td data-label="Data">${escapeHtml(date)}</td><td data-label="Categoria">${escapeHtml(item.categoryLabel)}</td><td data-label="Descrição">${escapeHtml(item.description || '-')}</td><td class="money" data-label="Valor">${sign}€${formatMoney(item.amount)}</td></tr>`;
 					})
@@ -611,49 +674,49 @@ const persistCategories = useCallback(
 </body>
 </html>`;
 
-const exportReportPdf = (mode: ExportReportMode) => {
-	const period =
-		mode === 'week'
-			? reportPeriod
-			: mode === 'month'
-				? getMonthPeriod(reportMonthDate)
-				: getYearPeriod(reportMonthDate.getFullYear());
-	const data =
-		mode === 'week'
-			? reportData
-			: buildReportData(scopedTransactions, period);
-	const title =
-		mode === 'week'
-			? 'Relatorio semanal'
-			: mode === 'month'
-				? 'Relatorio mensal'
-				: 'Relatorio anual';
+	const exportReportPdf = (mode: ExportReportMode) => {
+		const period =
+			mode === 'week'
+				? reportPeriod
+				: mode === 'month'
+					? getMonthPeriod(reportMonthDate)
+					: getYearPeriod(reportMonthDate.getFullYear());
+		const data =
+			mode === 'week'
+				? reportData
+				: buildReportData(scopedTransactions, period);
+		const title =
+			mode === 'week'
+				? 'Relatorio semanal'
+				: mode === 'month'
+					? 'Relatorio mensal'
+					: 'Relatorio anual';
 
-	const html = buildPrintableReportHtml(
-		title,
-		selectedProjectName,
-		period,
-		data,
-	);
-	const blob = new Blob([html], { type: 'text/html' });
-	const url = URL.createObjectURL(blob);
+		const html = buildPrintableReportHtml(
+			title,
+			selectedProjectName,
+			period,
+			data,
+		);
+		const blob = new Blob([html], { type: 'text/html' });
+		const url = URL.createObjectURL(blob);
 
-	const previewWindow = window.open(url, '_blank', PRINT_WINDOW_FEATURES);
+		const previewWindow = window.open(url, '_blank', PRINT_WINDOW_FEATURES);
 
-	if (!previewWindow) {
-		URL.revokeObjectURL(url);
+		if (!previewWindow) {
+			URL.revokeObjectURL(url);
+			setExportMenuOpen(false);
+			setExportError(true);
+			return;
+		}
+
 		setExportMenuOpen(false);
-		setExportError(true);
-		return;
-	}
-
-	setExportMenuOpen(false);
-	setExportError(false);
-	previewWindow.addEventListener('load', () => URL.revokeObjectURL(url), {
-		once: true,
-	});
-	previewWindow.focus();
-};
+		setExportError(false);
+		previewWindow.addEventListener('load', () => URL.revokeObjectURL(url), {
+			once: true,
+		});
+		previewWindow.focus();
+	};
 
 	const projectSelector = (
 		<div>
@@ -767,37 +830,38 @@ const exportReportPdf = (mode: ExportReportMode) => {
 		</div>
 	);
 
-const handleAddCategory = useCallback(() => {
-	const label = newCategoryLabel.trim();
-	if (!label) return;
-	const type = newCategoryType;
-	const baseId = label
-		.toLowerCase()
-		.replace(/\s+/g, '_')
-		.replace(/[^a-z0-9_]/g, '');
-	let id = baseId || `cat_${Date.now()}`;
-	if (categories[type].some((c) => c.id === id)) id = `${id}_${Date.now()}`;
-	const tag = label.slice(0, 3).toUpperCase();
-	const newCat: Category = { id, label, tag };
-	const next: SavedCategories = {
-		...categories,
-		[type]: [newCat, ...categories[type]],
-	} as SavedCategories;
-	persistCategories(next);
-	setNewCategoryLabel('');
-}, [newCategoryLabel, newCategoryType, categories, persistCategories]);
-
-const handleDeleteCategory = useCallback(
-	(type: TransactionType, id: string) => {
+	const handleAddCategory = useCallback(() => {
+		const label = newCategoryLabel.trim();
+		if (!label) return;
+		const type = newCategoryType;
+		const baseId = label
+			.toLowerCase()
+			.replace(/\s+/g, '_')
+			.replace(/[^a-z0-9_]/g, '');
+		let id = baseId || `cat_${Date.now()}`;
+		if (categories[type].some((c) => c.id === id))
+			id = `${id}_${Date.now()}`;
+		const tag = label.slice(0, 3).toUpperCase();
+		const newCat: Category = { id, label, tag };
 		const next: SavedCategories = {
 			...categories,
-			[type]: categories[type].filter((c) => c.id !== id),
+			[type]: [newCat, ...categories[type]],
 		} as SavedCategories;
 		persistCategories(next);
-		setManageConfirmCatId(null);
-	},
-	[categories, persistCategories],
-);
+		setNewCategoryLabel('');
+	}, [newCategoryLabel, newCategoryType, categories, persistCategories]);
+
+	const handleDeleteCategory = useCallback(
+		(type: TransactionType, id: string) => {
+			const next: SavedCategories = {
+				...categories,
+				[type]: categories[type].filter((c) => c.id !== id),
+			} as SavedCategories;
+			persistCategories(next);
+			setManageConfirmCatId(null);
+		},
+		[categories, persistCategories],
+	);
 
 	return (
 		<div
@@ -964,8 +1028,7 @@ const handleDeleteCategory = useCallback(
 											}}>
 											{g.items.map((t, i) => (
 												<div key={t.id}>
-													{confirmDeleteId ===
-													t.id ? (
+													{longPressId === t.id ? (
 														<div
 															className='flex items-center justify-between px-4 py-3'
 															style={{
@@ -983,7 +1046,7 @@ const handleDeleteCategory = useCallback(
 															<div className='flex gap-2'>
 																<button
 																	onClick={() =>
-																		setConfirmDeleteId(
+																		setLongPressId(
 																			null,
 																		)
 																	}
@@ -1014,11 +1077,25 @@ const handleDeleteCategory = useCallback(
 													) : (
 														<button
 															onClick={() =>
-																setConfirmDeleteId(
+																handleRowClick(
+																	t,
+																)
+															}
+															onPointerDown={() =>
+																startLongPress(
 																	t.id,
 																)
 															}
-															className='w-full flex items-center gap-3 px-4 py-3 text-left sl-row-enter'
+															onPointerUp={
+																cancelLongPress
+															}
+															onPointerLeave={
+																cancelLongPress
+															}
+															onPointerCancel={
+																cancelLongPress
+															}
+															className='w-full flex items-center gap-3 px-4 py-3 text-left sl-row-enter select-none'
 															style={{
 																background:
 																	'var(--bg-card)',
@@ -1026,6 +1103,10 @@ const handleDeleteCategory = useCallback(
 																	i === 0
 																		? 'none'
 																		: '1px solid var(--line)',
+																WebkitUserSelect:
+																	'none',
+																WebkitTouchCallout:
+																	'none',
 															}}>
 															<div
 																className='w-9 h-9 rounded-md flex items-center justify-center shrink-0 text-[10px] font-bold'
@@ -1389,7 +1470,9 @@ const handleDeleteCategory = useCallback(
 								<div
 									className='sl-display text-2xl'
 									style={{ color: 'var(--yellow)' }}>
-									NOVA ENTRADA
+									{editingId
+										? 'EDITAR ENTRADA'
+										: 'NOVA ENTRADA'}
 								</div>
 								<button
 									onClick={closeSheet}
@@ -1402,9 +1485,18 @@ const handleDeleteCategory = useCallback(
 								className='flex items-center gap-1.5 mb-4 text-xs'
 								style={{ color: 'var(--text-dim)' }}>
 								<Layers size={12} />
-								Adicionando em:{' '}
+								{editingId ? 'Projeto: ' : 'Adicionando em: '}
 								<span style={{ color: 'var(--text)' }}>
-									{selectedProjectName}
+									{editingId
+										? projects.find(
+												(p) =>
+													p.id ===
+													transactions.find(
+														(t) =>
+															t.id === editingId,
+													)?.projectId,
+											)?.name || 'Geral'
+										: selectedProjectName}
 								</span>
 							</div>
 
@@ -1567,8 +1659,69 @@ const handleDeleteCategory = useCallback(
 										? 'none'
 										: '1px solid var(--line)',
 								}}>
-								GUARDAR LANÇAMENTO
+								{editingId
+									? 'GUARDAR ALTERAÇÕES'
+									: 'GUARDAR LANÇAMENTO'}
 							</button>
+
+							{editingId && (
+								<div className='mt-3'>
+									{sheetDeleteConfirm ? (
+										<div
+											className='flex items-center justify-between px-4 py-3 rounded-xl'
+											style={{
+												background: 'var(--bg-card)',
+												border: '1px solid var(--line)',
+											}}>
+											<span
+												className='text-xs'
+												style={{
+													color: 'var(--text-dim)',
+												}}>
+												Excluir esta entrada?
+											</span>
+											<div className='flex gap-2'>
+												<button
+													onClick={() =>
+														setSheetDeleteConfirm(
+															false,
+														)
+													}
+													className='text-xs px-3 py-1.5 rounded-md'
+													style={{
+														background:
+															'var(--bg-raised)',
+														color: 'var(--text)',
+													}}>
+													Cancelar
+												</button>
+												<button
+													onClick={
+														handleDeleteFromSheet
+													}
+													className='text-xs px-3 py-1.5 rounded-md'
+													style={{
+														background:
+															'var(--orange)',
+														color: '#1c1b19',
+													}}>
+													Excluir
+												</button>
+											</div>
+										</div>
+									) : (
+										<button
+											onClick={() =>
+												setSheetDeleteConfirm(true)
+											}
+											className='w-full flex items-center justify-center gap-1.5 py-3 text-xs font-semibold tracking-widest'
+											style={{ color: 'var(--orange)' }}>
+											<Trash2 size={14} />
+											EXCLUIR ENTRADA
+										</button>
+									)}
+								</div>
+							)}
 						</div>
 					</div>
 				)}
