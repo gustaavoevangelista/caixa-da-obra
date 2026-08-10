@@ -7,6 +7,7 @@ import {
 	useCallback,
 	useRef,
 	type PointerEvent as ReactPointerEvent,
+	type ChangeEvent,
 } from 'react';
 import {
 	Plus,
@@ -21,6 +22,8 @@ import {
 	Flag,
 	RotateCcw,
 	ArrowLeft,
+	User,
+	Camera,
 } from 'lucide-react';
 import {
 	buildReportData,
@@ -202,6 +205,13 @@ export default function SiteLedger() {
 	const [manageConfirmCatId, setManageConfirmCatId] = useState<string | null>(
 		null,
 	);
+	const [companyName, setCompanyName] = useState('');
+	const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+	const [profileOpen, setProfileOpen] = useState(false);
+	const [profileNameDraft, setProfileNameDraft] = useState('');
+	const [profileLogoDraft, setProfileLogoDraft] = useState<string | null>(
+		null,
+	);
 	const chipScrollRef = useRef<HTMLDivElement | null>(null);
 	const dragState = useRef({
 		isDown: false,
@@ -258,6 +268,8 @@ export default function SiteLedger() {
 				if (metaRes?.value) {
 					const meta = JSON.parse(metaRes.value) as MetaState & {
 						categories?: SavedCategories;
+						companyName?: string;
+						companyLogo?: string | null;
 					};
 					setProjects(meta.projects || []);
 					setSelectedProject(meta.selectedProject || GENERAL);
@@ -267,6 +279,8 @@ export default function SiteLedger() {
 							income: INCOME_CATEGORIES,
 						},
 					);
+					setCompanyName(meta.companyName || '');
+					setCompanyLogo(meta.companyLogo || null);
 				}
 			} catch {
 				// no existing meta yet
@@ -315,6 +329,82 @@ export default function SiteLedger() {
 			console.error('Storage error:', err);
 		}
 	}, []);
+
+	const persistProfile = useCallback(
+		async (nextName: string, nextLogo: string | null) => {
+			setCompanyName(nextName);
+			setCompanyLogo(nextLogo);
+			try {
+				const metaRes = await storageApi.get(META_KEY, false);
+				const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
+				meta.companyName = nextName;
+				meta.companyLogo = nextLogo;
+				await storageApi.set(META_KEY, JSON.stringify(meta), false);
+			} catch (err) {
+				console.error('Storage error:', err);
+			}
+		},
+		[],
+	);
+
+	const resizeImageToDataUrl = (file: File): Promise<string> =>
+		new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onerror = () => reject(new Error('Read failed'));
+			reader.onload = () => {
+				const img = new Image();
+				img.onerror = () => reject(new Error('Decode failed'));
+				img.onload = () => {
+					const SIZE = 200;
+					const canvas = document.createElement('canvas');
+					canvas.width = SIZE;
+					canvas.height = SIZE;
+					const ctx = canvas.getContext('2d');
+					if (!ctx) {
+						reject(new Error('Canvas unavailable'));
+						return;
+					}
+					const scale = Math.max(SIZE / img.width, SIZE / img.height);
+					const drawWidth = img.width * scale;
+					const drawHeight = img.height * scale;
+					const dx = (SIZE - drawWidth) / 2;
+					const dy = (SIZE - drawHeight) / 2;
+					ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+					resolve(canvas.toDataURL('image/png'));
+				};
+				img.src = reader.result as string;
+			};
+			reader.readAsDataURL(file);
+		});
+
+	const openProfile = () => {
+		setProfileNameDraft(companyName);
+		setProfileLogoDraft(companyLogo);
+		setProfileOpen(true);
+	};
+
+	const closeProfile = () => {
+		setProfileOpen(false);
+	};
+
+	const handleProfilePhotoChange = async (
+		e: ChangeEvent<HTMLInputElement>,
+	) => {
+		const file = e.target.files?.[0];
+		e.target.value = '';
+		if (!file) return;
+		try {
+			const dataUrl = await resizeImageToDataUrl(file);
+			setProfileLogoDraft(dataUrl);
+		} catch (err) {
+			console.error('Image processing error:', err);
+		}
+	};
+
+	const handleSaveProfile = async () => {
+		await persistProfile(profileNameDraft.trim(), profileLogoDraft);
+		setProfileOpen(false);
+	};
 
 	const selectProject = (id: string) => persistMeta(projects, id);
 
@@ -916,21 +1006,40 @@ export default function SiteLedger() {
 							CONTROLE DE DESPESAS E RECEITAS
 						</div>
 					</div>
-					<button
-						onClick={() =>
-							setView(view === 'home' ? 'reports' : 'home')
-						}
-						className='w-11 h-11 rounded-full flex items-center justify-center border'
-						style={{
-							borderColor: 'var(--line)',
-							background: 'var(--bg-raised)',
-						}}>
-						{view === 'home' ? (
-							<BarChart3 size={24} color='var(--yellow)' />
-						) : (
-							<ArrowLeft size={24} color='var(--yellow)' />
-						)}
-					</button>
+					<div className='flex items-center gap-2'>
+						<button
+							onClick={openProfile}
+							className='w-11 h-11 rounded-full flex items-center justify-center border overflow-hidden'
+							style={{
+								borderColor: 'var(--line)',
+								background: 'var(--bg-raised)',
+							}}>
+							{companyLogo ? (
+								<img
+									src={companyLogo}
+									alt={companyName || 'Perfil'}
+									className='w-full h-full object-cover'
+								/>
+							) : (
+								<User size={20} color='var(--text-dim)' />
+							)}
+						</button>
+						<button
+							onClick={() =>
+								setView(view === 'home' ? 'reports' : 'home')
+							}
+							className='w-11 h-11 rounded-full flex items-center justify-center border'
+							style={{
+								borderColor: 'var(--line)',
+								background: 'var(--bg-raised)',
+							}}>
+							{view === 'home' ? (
+								<BarChart3 size={24} color='var(--yellow)' />
+							) : (
+								<ArrowLeft size={24} color='var(--yellow)' />
+							)}
+						</button>
+					</div>
 				</div>
 
 				{!loaded ? (
@@ -1795,6 +1904,100 @@ export default function SiteLedger() {
 											: '1px solid var(--line)',
 									}}>
 									CRIAR
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{/* ---- PROFILE MODAL ---- */}
+				{profileOpen && (
+					<div className='absolute inset-0 z-30 flex items-center justify-center px-6 sl-fade-enter'>
+						<div
+							className='absolute inset-0'
+							style={{ background: 'rgba(0,0,0,0.55)' }}
+							onClick={closeProfile}
+						/>
+						<div
+							className='relative w-full rounded-2xl p-5'
+							style={{
+								background: 'var(--bg-raised)',
+								border: '1px solid var(--line)',
+							}}>
+							<div
+								className='sl-display text-2xl mb-4'
+								style={{ color: 'var(--yellow)' }}>
+								PERFIL
+							</div>
+
+							<div className='flex justify-center mb-4'>
+								<label
+									className='relative w-24 h-24 rounded-full flex items-center justify-center overflow-hidden cursor-pointer border'
+									style={{
+										borderColor: 'var(--line)',
+										background: 'var(--bg-card)',
+									}}>
+									{profileLogoDraft ? (
+										<img
+											src={profileLogoDraft}
+											alt='Logotipo'
+											className='w-full h-full object-cover'
+										/>
+									) : (
+										<User
+											size={36}
+											color='var(--text-dim)'
+										/>
+									)}
+									<div
+										className='absolute bottom-0 left-0 right-0 flex items-center justify-center py-1.5'
+										style={{
+											background: 'rgba(0,0,0,0.55)',
+										}}>
+										<Camera size={14} color='#fff' />
+									</div>
+									<input
+										type='file'
+										accept='image/*'
+										onChange={handleProfilePhotoChange}
+										className='hidden'
+									/>
+								</label>
+							</div>
+
+							<input
+								value={profileNameDraft}
+								onChange={(e) =>
+									setProfileNameDraft(e.target.value)
+								}
+								placeholder='Nome da empresa'
+								className='w-full rounded-lg px-3 py-2.5 text-sm mb-4 outline-none'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+									color: 'var(--text)',
+								}}
+							/>
+
+							<div className='flex gap-2'>
+								<button
+									onClick={closeProfile}
+									className='flex-1 rounded-xl py-3 text-xs font-semibold tracking-widest'
+									style={{
+										background: 'var(--bg-card)',
+										color: 'var(--text-dim)',
+										border: '1px solid var(--line)',
+									}}>
+									CANCELAR
+								</button>
+								<button
+									onClick={handleSaveProfile}
+									className='flex-1 rounded-xl py-3 text-xs font-bold tracking-widest'
+									style={{
+										background: 'var(--yellow)',
+										color: '#1c1b19',
+									}}>
+									GUARDAR
 								</button>
 							</div>
 						</div>
