@@ -960,10 +960,14 @@ export default function SiteLedger() {
 			<style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
         .sl-root {
-          --bg: #1c1b19;
-          --bg-raised: #26241f;
-          --bg-card: #2c2a24;
-          --line: #3d3a33;
+          --bg: #0d324d;
+        //   --bg: #1c1b19;
+          --bg-raised: #0d324d;
+          --bg-card: #0d324d;
+        //   --bg-raised: #26241f;
+        //   --bg-card: #2c2a24;
+          --line: #fff;
+        //   --line: #3d3a33;
           --yellow: #f4c430;
           --yellow-dim: #d1a927;
           --orange: #ff6b35;
