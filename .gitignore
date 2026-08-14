@@ -1,4 +1,8 @@
 .next
 node_modules
+*.tsbuildinfo
 package-lock.json
 docs
+.env
+.env.local
+.env.*.local

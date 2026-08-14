@@ -9,6 +9,7 @@ import {
 	type PointerEvent as ReactPointerEvent,
 	type ChangeEvent,
 } from 'react';
+import { useRouter } from 'next/navigation';
 import {
 	Plus,
 	X,
@@ -38,22 +39,11 @@ import {
 	EXPORT_REPORT_OPTIONS,
 	type ExportReportMode,
 } from './export-options';
-
-declare global {
-	interface Window {
-		storage: {
-			get: (
-				key: string,
-				defaultValue: unknown,
-			) => Promise<{ value?: string } | null>;
-			set: (
-				key: string,
-				value: string,
-				defaultValue: unknown,
-			) => Promise<void>;
-		};
-	}
-}
+import {
+	EXPENSE_CATEGORIES,
+	INCOME_CATEGORIES,
+	type Category,
+} from '@/lib/default-categories';
 
 type TransactionType = 'expense' | 'income';
 
@@ -75,67 +65,23 @@ type Project = {
 	status: 'active' | 'ended';
 };
 
-type Category = {
-	id: string;
-	label: string;
-	tag: string;
-};
-
-type MetaState = {
-	projects: Project[];
-	selectedProject: string;
-};
-
 type SavedCategories = {
 	expense: Category[];
 	income: Category[];
 };
 
-const EXPENSE_CATEGORIES: Category[] = [
-	{ id: 'materials', label: 'Materiais', tag: 'MAT' },
-	{ id: 'tools', label: 'Ferramentas e Equip.', tag: 'TLS' },
-	{ id: 'labor', label: 'Mão de obra', tag: 'LAB' },
-	{ id: 'fuel', label: 'Combustível', tag: 'FUE' },
-	{ id: 'permits', label: 'Taxas', tag: 'PRM' },
-	{ id: 'food', label: 'Alimentação', tag: 'FOD' },
-	{ id: 'other_exp', label: 'Outros', tag: 'OTH' },
-];
-
-const INCOME_CATEGORIES: Category[] = [
-	{ id: 'payment', label: 'Pagamento', tag: 'PAY' },
-	{ id: 'advance', label: 'Adiantamento', tag: 'ADV' },
-	{ id: 'other_inc', label: 'Outros', tag: 'OTH' },
-];
-
-const STORAGE_KEY = 'transactions';
-const META_KEY = 'meta';
 const GENERAL = 'general';
 
-const storageApi = {
-	get: async (key: string, _default: unknown) => {
-		if (typeof window === 'undefined') return null;
-		if ('storage' in window && window.storage?.get) {
-			return window.storage.get(key, _default);
-		}
-		try {
-			const value = window.localStorage.getItem(key);
-			return value === null ? null : { value };
-		} catch {
-			return null;
-		}
-	},
-	set: async (key: string, value: string, _default: unknown) => {
-		if (typeof window === 'undefined') return;
-		if ('storage' in window && window.storage?.set) {
-			return window.storage.set(key, value, _default);
-		}
-		try {
-			window.localStorage.setItem(key, value);
-		} catch {
-			// ignore storage failure in unsupported environments
-		}
-	},
-};
+async function api(path: string, init?: RequestInit) {
+	const res = await fetch(path, {
+		headers: { 'Content-Type': 'application/json' },
+		...init,
+	});
+	if (!res.ok) {
+		throw new Error(`Request to ${path} failed with ${res.status}`);
+	}
+	return res;
+}
 
 function formatMoney(n: number) {
 	const sign = n < 0 ? '-' : '';
@@ -172,6 +118,7 @@ function dayLabel(dateStr: string, refNow: Date) {
 }
 
 export default function SiteLedger() {
+	const router = useRouter();
 	const [transactions, setTransactions] = useState<Transaction[]>([]);
 	const [loaded, setLoaded] = useState(false);
 	const [view, setView] = useState<'home' | 'reports'>('home');
@@ -256,34 +203,21 @@ export default function SiteLedger() {
 	useEffect(() => {
 		const load = async () => {
 			try {
-				const res = await storageApi.get(STORAGE_KEY, false);
-				if (res?.value) {
-					setTransactions(JSON.parse(res.value));
-				}
-			} catch {
-				// no existing data yet
-			}
-			try {
-				const metaRes = await storageApi.get(META_KEY, false);
-				if (metaRes?.value) {
-					const meta = JSON.parse(metaRes.value) as MetaState & {
-						categories?: SavedCategories;
-						companyName?: string;
-						companyLogo?: string | null;
-					};
-					setProjects(meta.projects || []);
-					setSelectedProject(meta.selectedProject || GENERAL);
-					setCategories(
-						meta.categories || {
-							expense: EXPENSE_CATEGORIES,
-							income: INCOME_CATEGORIES,
-						},
-					);
-					setCompanyName(meta.companyName || '');
-					setCompanyLogo(meta.companyLogo || null);
-				}
-			} catch {
-				// no existing meta yet
+				const res = await api('/api/state');
+				const data = await res.json();
+				setTransactions(data.transactions || []);
+				setProjects(data.projects || []);
+				setSelectedProject(data.selectedProject || GENERAL);
+				setCategories(
+					data.categories || {
+						expense: EXPENSE_CATEGORIES,
+						income: INCOME_CATEGORIES,
+					},
+				);
+				setCompanyName(data.companyName || '');
+				setCompanyLogo(data.companyLogo || null);
+			} catch (error) {
+				console.error('Failed to load data:', error);
 			} finally {
 				setLoaded(true);
 			}
@@ -292,56 +226,180 @@ export default function SiteLedger() {
 		load();
 	}, []);
 
-	const persist = useCallback(async (next: Transaction[]) => {
-		setTransactions(next);
+	const createTransaction = useCallback(async (entry: Transaction) => {
+		setTransactions((prev) => [entry, ...prev]);
 		try {
-			await storageApi.set(STORAGE_KEY, JSON.stringify(next), false);
+			await api('/api/transactions', {
+				method: 'POST',
+				body: JSON.stringify(entry),
+			});
 		} catch (error) {
-			console.error('Storage error:', error);
+			console.error('Failed to create transaction:', error);
 		}
 	}, []);
 
-	const persistMeta = useCallback(
-		async (nextProjects: Project[], nextSelected: string) => {
-			setProjects(nextProjects);
-			setSelectedProject(nextSelected);
+	const updateTransaction = useCallback(
+		async (id: string, patch: Omit<Transaction, 'id' | 'createdAt' | 'projectId'>) => {
+			let merged: Transaction | undefined;
+			setTransactions((prev) =>
+				prev.map((t) => {
+					if (t.id !== id) return t;
+					merged = { ...t, ...patch };
+					return merged;
+				}),
+			);
 			try {
-				const metaRes = await storageApi.get(META_KEY, false);
-				const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
-				meta.projects = nextProjects;
-				meta.selectedProject = nextSelected;
-				await storageApi.set(META_KEY, JSON.stringify(meta), false);
+				const res = await fetch(`/api/transactions/${id}`, {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(patch),
+				});
+				if (res.status === 404 && merged) {
+					// The row was never persisted (e.g. its original create
+					// request failed silently) — recreate it from current
+					// local state instead of losing the edit.
+					await api('/api/transactions', {
+						method: 'POST',
+						body: JSON.stringify(merged),
+					});
+					return;
+				}
+				if (!res.ok) {
+					throw new Error(
+						`Request to /api/transactions/${id} failed with ${res.status}`,
+					);
+				}
 			} catch (error) {
-				console.error('Storage error:', error);
+				console.error('Failed to update transaction:', error);
 			}
 		},
 		[],
 	);
 
-	const persistCategories = useCallback(async (next: SavedCategories) => {
-		setCategories(next);
+	const deleteTransaction = useCallback(async (id: string) => {
+		setTransactions((prev) => prev.filter((t) => t.id !== id));
 		try {
-			const metaRes = await storageApi.get(META_KEY, false);
-			const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
-			meta.categories = next;
-			await storageApi.set(META_KEY, JSON.stringify(meta), false);
-		} catch (err) {
-			console.error('Storage error:', err);
+			await api(`/api/transactions/${id}`, { method: 'DELETE' });
+		} catch (error) {
+			console.error('Failed to delete transaction:', error);
 		}
 	}, []);
+
+	const changeSelectedProject = useCallback(async (id: string) => {
+		setSelectedProject(id);
+		try {
+			await api('/api/profile', {
+				method: 'PUT',
+				body: JSON.stringify({ selectedProject: id }),
+			});
+		} catch (error) {
+			console.error('Failed to update selected project:', error);
+		}
+	}, []);
+
+	const createProject = useCallback(async (proj: Project) => {
+		setProjects((prev) => [...prev, proj]);
+		setSelectedProject(proj.id);
+		try {
+			await api('/api/projects', {
+				method: 'POST',
+				body: JSON.stringify(proj),
+			});
+			await api('/api/profile', {
+				method: 'PUT',
+				body: JSON.stringify({ selectedProject: proj.id }),
+			});
+		} catch (error) {
+			console.error('Failed to create project:', error);
+		}
+	}, []);
+
+	const updateProjectStatus = useCallback(
+		async (id: string, status: Project['status']) => {
+			setProjects((prev) =>
+				prev.map((p) => (p.id === id ? { ...p, status } : p)),
+			);
+			try {
+				await api(`/api/projects/${id}`, {
+					method: 'PUT',
+					body: JSON.stringify({ status }),
+				});
+			} catch (error) {
+				console.error('Failed to update project:', error);
+			}
+		},
+		[],
+	);
+
+	const deleteProject = useCallback(
+		async (id: string, fallbackSelected: string) => {
+			setProjects((prev) => prev.filter((p) => p.id !== id));
+			setSelectedProject(fallbackSelected);
+			setTransactions((prev) =>
+				prev.map((t) => (t.projectId === id ? { ...t, projectId: null } : t)),
+			);
+			try {
+				await api(`/api/projects/${id}`, { method: 'DELETE' });
+				if (fallbackSelected !== selectedProject) {
+					await api('/api/profile', {
+						method: 'PUT',
+						body: JSON.stringify({ selectedProject: fallbackSelected }),
+					});
+				}
+			} catch (error) {
+				console.error('Failed to delete project:', error);
+			}
+		},
+		[selectedProject],
+	);
+
+	const createCategory = useCallback(
+		async (type: TransactionType, cat: Category) => {
+			setCategories((prev) => ({
+				...prev,
+				[type]: [cat, ...prev[type]],
+			}));
+			try {
+				await api('/api/categories', {
+					method: 'POST',
+					body: JSON.stringify({ type, ...cat }),
+				});
+			} catch (error) {
+				console.error('Failed to create category:', error);
+			}
+		},
+		[],
+	);
+
+	const deleteCategory = useCallback(
+		async (type: TransactionType, id: string) => {
+			setCategories((prev) => ({
+				...prev,
+				[type]: prev[type].filter((c) => c.id !== id),
+			}));
+			try {
+				await api(`/api/categories/${type}/${id}`, { method: 'DELETE' });
+			} catch (error) {
+				console.error('Failed to delete category:', error);
+			}
+		},
+		[],
+	);
 
 	const persistProfile = useCallback(
 		async (nextName: string, nextLogo: string | null) => {
 			setCompanyName(nextName);
 			setCompanyLogo(nextLogo);
 			try {
-				const metaRes = await storageApi.get(META_KEY, false);
-				const meta = metaRes?.value ? JSON.parse(metaRes.value) : {};
-				meta.companyName = nextName;
-				meta.companyLogo = nextLogo;
-				await storageApi.set(META_KEY, JSON.stringify(meta), false);
-			} catch (err) {
-				console.error('Storage error:', err);
+				await api('/api/profile', {
+					method: 'PUT',
+					body: JSON.stringify({
+						companyName: nextName,
+						companyLogo: nextLogo,
+					}),
+				});
+			} catch (error) {
+				console.error('Failed to update profile:', error);
 			}
 		},
 		[],
@@ -387,6 +445,12 @@ export default function SiteLedger() {
 		setProfileOpen(false);
 	};
 
+	const handleLogout = async () => {
+		await fetch('/api/auth/logout', { method: 'POST' });
+		router.replace('/login');
+		router.refresh();
+	};
+
 	const handleProfilePhotoChange = async (
 		e: ChangeEvent<HTMLInputElement>,
 	) => {
@@ -406,7 +470,7 @@ export default function SiteLedger() {
 		setProfileOpen(false);
 	};
 
-	const selectProject = (id: string) => persistMeta(projects, id);
+	const selectProject = (id: string) => changeSelectedProject(id);
 
 	const handleAddProject = async () => {
 		const name = newProjectName.trim();
@@ -416,29 +480,23 @@ export default function SiteLedger() {
 			name,
 			status: 'active',
 		};
-		const next: Project[] = [...projects, proj];
-		await persistMeta(next, proj.id);
+		await createProject(proj);
 		setNewProjectName('');
 		setAddProjectOpen(false);
 	};
 
 	const handleToggleEndProject = async (id: string) => {
-		const next: Project[] = projects.map((p) =>
-			p.id === id
-				? { ...p, status: p.status === 'ended' ? 'active' : 'ended' }
-				: p,
+		const proj = projects.find((p) => p.id === id);
+		if (!proj) return;
+		await updateProjectStatus(
+			id,
+			proj.status === 'ended' ? 'active' : 'ended',
 		);
-		await persistMeta(next, selectedProject);
 	};
 
 	const handleDeleteProject = async (id: string) => {
-		const next: Project[] = projects.filter((p) => p.id !== id);
 		const nextSelected = selectedProject === id ? GENERAL : selectedProject;
-		await persistMeta(next, nextSelected);
-		const updatedTx = transactions.map((t) =>
-			t.projectId === id ? { ...t, projectId: null } : t,
-		);
-		await persist(updatedTx);
+		await deleteProject(id, nextSelected);
 		setManageConfirmId(null);
 	};
 
@@ -502,20 +560,14 @@ export default function SiteLedger() {
 		if (!catObj) return;
 
 		if (editingId) {
-			const next = transactions.map((t) =>
-				t.id === editingId
-					? {
-							...t,
-							type: txType,
-							amount: value,
-							category: catObj.id,
-							categoryLabel: catObj.label,
-							categoryTag: catObj.tag,
-							description: description.trim(),
-						}
-					: t,
-			);
-			await persist(next);
+			await updateTransaction(editingId, {
+				type: txType,
+				amount: value,
+				category: catObj.id,
+				categoryLabel: catObj.label,
+				categoryTag: catObj.tag,
+				description: description.trim(),
+			});
 			closeSheet();
 			return;
 		}
@@ -531,18 +583,18 @@ export default function SiteLedger() {
 			createdAt: new Date().toISOString(),
 			projectId: selectedProject === GENERAL ? null : selectedProject,
 		};
-		await persist([entry, ...transactions]);
+		await createTransaction(entry);
 		closeSheet();
 	};
 
 	const handleDelete = async (id: string) => {
-		await persist(transactions.filter((t) => t.id !== id));
+		await deleteTransaction(id);
 		setLongPressId(null);
 	};
 
 	const handleDeleteFromSheet = async () => {
 		if (!editingId) return;
-		await persist(transactions.filter((t) => t.id !== editingId));
+		await deleteTransaction(editingId);
 		closeSheet();
 	};
 
@@ -933,24 +985,16 @@ export default function SiteLedger() {
 			id = `${id}_${Date.now()}`;
 		const tag = label.slice(0, 3).toUpperCase();
 		const newCat: Category = { id, label, tag };
-		const next: SavedCategories = {
-			...categories,
-			[type]: [newCat, ...categories[type]],
-		} as SavedCategories;
-		persistCategories(next);
+		createCategory(type, newCat);
 		setNewCategoryLabel('');
-	}, [newCategoryLabel, newCategoryType, categories, persistCategories]);
+	}, [newCategoryLabel, newCategoryType, categories, createCategory]);
 
 	const handleDeleteCategory = useCallback(
 		(type: TransactionType, id: string) => {
-			const next: SavedCategories = {
-				...categories,
-				[type]: categories[type].filter((c) => c.id !== id),
-			} as SavedCategories;
-			persistCategories(next);
+			deleteCategory(type, id);
 			setManageConfirmCatId(null);
 		},
-		[categories, persistCategories],
+		[deleteCategory],
 	);
 
 	return (
@@ -2004,6 +2048,17 @@ export default function SiteLedger() {
 									GUARDAR
 								</button>
 							</div>
+
+							<button
+								onClick={handleLogout}
+								className='w-full rounded-xl py-3 text-xs font-semibold tracking-widest mt-2'
+								style={{
+									background: 'var(--bg-card)',
+									color: 'var(--orange)',
+									border: '1px solid var(--line)',
+								}}>
+								SAIR
+							</button>
 						</div>
 					</div>
 				)}
