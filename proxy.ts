@@ -1,10 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 
 const PUBLIC_PATHS = ['/login'];
 
-export async function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
 	const { pathname } = request.nextUrl;
+
+	// The admin dashboard is a separate surface with its own Clerk-based
+	// auth (see lib/admin-auth.ts) — it never touches the jose-cookie
+	// session logic below, and a missing/broken Clerk config can only ever
+	// break /admin/*, never the customer-facing routes. Constructed lazily
+	// (not at module scope) to keep that isolation.
+	if (pathname.startsWith('/admin')) {
+		const { clerkMiddleware, createRouteMatcher } = await import(
+			'@clerk/nextjs/server'
+		);
+		const isPublicAdminRoute = createRouteMatcher(['/admin/sign-in(.*)']);
+		const adminMiddleware = clerkMiddleware(async (auth, req) => {
+			if (!isPublicAdminRoute(req)) {
+				await auth.protect();
+			}
+		});
+		return adminMiddleware(request, event);
+	}
 
 	if (
 		PUBLIC_PATHS.some((path) => pathname === path) ||

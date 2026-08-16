@@ -117,7 +117,7 @@ function dayLabel(dateStr: string, refNow: Date) {
 		.toUpperCase();
 }
 
-export default function SiteLedger() {
+export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const router = useRouter();
 	const [transactions, setTransactions] = useState<Transaction[]>([]);
 	const [loaded, setLoaded] = useState(false);
@@ -2049,6 +2049,21 @@ export default function SiteLedger() {
 								</button>
 							</div>
 
+							{isAdmin && (
+								<div className="flex">
+									<a
+										href='/admin'
+										className='w-full rounded-xl py-3 text-xs font-semibold tracking-widest mt-2 text-center'
+										style={{
+											background: 'var(--bg-card)',
+											color: 'var(--blue)',
+											border: '1px solid var(--line)',
+										}}>
+										ADMIN DASHBOARD
+									</a>
+								</div>
+							)}
+							
 							<button
 								onClick={handleLogout}
 								className='w-full rounded-xl py-3 text-xs font-semibold tracking-widest mt-2'
