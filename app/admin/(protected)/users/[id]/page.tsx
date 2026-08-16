@@ -59,7 +59,7 @@ export default async function AdminUserDetailPage({
 				</h1>
 				<p className='text-sm text-slate-400'>
 					Empresa: {user.company_name || '—'} · Cliente desde{' '}
-					{new Date(user.created_at).toLocaleDateString('pt-BR')}
+					{new Date(user.created_at).toLocaleDateString('pt-PT')}
 				</p>
 			</div>
 
@@ -129,7 +129,7 @@ export default async function AdminUserDetailPage({
 								>
 									<td className='px-4 py-3 text-slate-400'>
 										{new Date(tx.created_at).toLocaleDateString(
-											'pt-BR',
+											'pt-PT',
 										)}
 									</td>
 									<td className='px-4 py-3 text-slate-400'>
@@ -142,9 +142,9 @@ export default async function AdminUserDetailPage({
 										{tx.description || '—'}
 									</td>
 									<td className='px-4 py-3 text-right text-slate-100'>
-										{Number(tx.amount).toLocaleString('pt-BR', {
+										{Number(tx.amount).toLocaleString('pt-PT', {
 											style: 'currency',
-											currency: 'BRL',
+											currency: 'EUR',
 										})}
 									</td>
 								</tr>
