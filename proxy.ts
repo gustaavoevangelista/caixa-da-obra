@@ -2,6 +2,7 @@ import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
 
 const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATH_PREFIXES = ['/pricing'];
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
 	const { pathname } = request.nextUrl;
@@ -26,6 +27,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
 	if (
 		PUBLIC_PATHS.some((path) => pathname === path) ||
+		PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
 		pathname.startsWith('/api/auth/')
 	) {
 		return NextResponse.next();
