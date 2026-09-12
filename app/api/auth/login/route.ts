@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 	}
 
 	const { rows } = await pool.query(
-		'SELECT id, email FROM users WHERE email = $1',
+		'SELECT id, email, is_active FROM users WHERE email = $1',
 		[email.trim().toLowerCase()],
 	);
 	const user = rows[0];
@@ -22,6 +22,13 @@ export async function POST(request: Request) {
 		return NextResponse.json(
 			{ error: 'E-mail não encontrado.' },
 			{ status: 401 },
+		);
+	}
+
+	if (!user.is_active) {
+		return NextResponse.json(
+			{ error: 'Contacte o administrador para regularizar sua conta.' },
+			{ status: 403 },
 		);
 	}
 

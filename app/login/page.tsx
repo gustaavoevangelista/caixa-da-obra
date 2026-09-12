@@ -1,13 +1,28 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState, type FormEvent } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
+	return (
+		<Suspense fallback={null}>
+			<LoginForm />
+		</Suspense>
+	);
+}
+
+function LoginForm() {
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [email, setEmail] = useState('');
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
+
+	useEffect(() => {
+		if (searchParams.get('inactive') === '1') {
+			setError('Contacte o administrador para regularizar sua conta.');
+		}
+	}, [searchParams]);
 
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();

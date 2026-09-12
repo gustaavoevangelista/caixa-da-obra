@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation';
 import { pool } from '@/lib/db';
+import { ToggleActiveButton } from './toggle-active-button';
 
 type Params = { id: string };
 
 async function getUser(id: string) {
 	const { rows } = await pool.query(
-		`SELECT u.id, u.email, u.created_at, p.company_name, p.selected_project
+		`SELECT u.id, u.email, u.is_active, u.created_at, p.company_name, p.selected_project
 		 FROM users u
 		 LEFT JOIN profiles p ON p.user_id = u.id
 		 WHERE u.id = $1`,
@@ -53,14 +54,17 @@ export default async function AdminUserDetailPage({
 
 	return (
 		<div className='flex flex-col gap-8'>
-			<div>
-				<h1 className='text-lg font-semibold text-slate-100'>
-					{user.email}
-				</h1>
-				<p className='text-sm text-slate-400'>
-					Empresa: {user.company_name || '—'} · Cliente desde{' '}
-					{new Date(user.created_at).toLocaleDateString('pt-PT')}
-				</p>
+			<div className='flex items-start justify-between gap-4'>
+				<div>
+					<h1 className='text-lg font-semibold text-slate-100'>
+						{user.email}
+					</h1>
+					<p className='text-sm text-slate-400'>
+						Empresa: {user.company_name || '—'} · Cliente desde{' '}
+						{new Date(user.created_at).toLocaleDateString('pt-PT')}
+					</p>
+				</div>
+				<ToggleActiveButton userId={user.id} isActive={user.is_active} />
 			</div>
 
 			<section className='flex flex-col gap-3'>
