@@ -133,6 +133,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const [saveError, setSaveError] = useState(false);
 	const [photoDraft, setPhotoDraft] = useState<string | null>(null);
 	const [photoError, setPhotoError] = useState<string | null>(null);
+	const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [sheetDeleteConfirm, setSheetDeleteConfirm] = useState(false);
 	const [longPressId, setLongPressId] = useState<string | null>(null);
@@ -1353,6 +1354,19 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 																		: ''}
 																</div>
 															</div>
+															{t.photo && (
+																<div
+																	className='w-6 h-6 rounded-full flex items-center justify-center shrink-0'
+																	style={{
+																		background:
+																			'var(--bg-raised)',
+																	}}>
+																	<Camera
+																		size={12}
+																		color='var(--text-dim)'
+																	/>
+																</div>
+															)}
 															<div
 																className='text-sm font-semibold shrink-0'
 																style={{
@@ -1809,11 +1823,18 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 								</label>
 								{photoDraft && (
 									<div className='relative w-11 h-11 rounded-lg overflow-hidden shrink-0'>
-										<img
-											src={photoDraft}
-											alt='Recibo'
-											className='w-full h-full object-cover'
-										/>
+										<button
+											type='button'
+											onClick={() =>
+												setLightboxPhoto(photoDraft)
+											}
+											className='block w-full h-full'>
+											<img
+												src={photoDraft}
+												alt='Recibo'
+												className='w-full h-full object-cover'
+											/>
+										</button>
 										<button
 											type='button'
 											onClick={handleRemovePhoto}
@@ -2595,6 +2616,28 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 								</div>
 							</div>
 						</div>
+					</div>
+				)}
+
+				{/* ---- PHOTO LIGHTBOX ---- */}
+				{lightboxPhoto && (
+					<div
+						className='absolute inset-0 z-40 flex items-center justify-center sl-fade-enter'
+						style={{ background: 'rgba(0,0,0,0.9)' }}
+						onClick={() => setLightboxPhoto(null)}>
+						<img
+							src={lightboxPhoto}
+							alt='Recibo'
+							className='max-w-full max-h-full object-contain'
+							style={{ touchAction: 'pinch-zoom' }}
+						/>
+						<button
+							type='button'
+							onClick={() => setLightboxPhoto(null)}
+							className='absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center'
+							style={{ background: 'rgba(255,255,255,0.15)' }}>
+							<X size={18} color='#fff' />
+						</button>
 					</div>
 				)}
 			</div>
