@@ -1098,6 +1098,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 			);
 			return;
 		}
+		setInvoiceError(null);
 		previewWindow.addEventListener(
 			'load',
 			() => URL.revokeObjectURL(url),
@@ -1912,6 +1913,14 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 									: 'HISTÓRICO'}
 							</button>
 						</div>
+
+						{invoiceError && !invoiceSheetOpen && (
+							<div
+								className='text-xs mb-4'
+								style={{ color: 'var(--orange)' }}>
+								{invoiceError}
+							</div>
+						)}
 
 						{invoiceHistoryOpen &&
 							(invoices.length === 0 ? (
