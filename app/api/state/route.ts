@@ -13,7 +13,8 @@ export async function GET() {
 			`SELECT id, type, amount, category,
 				category_label AS "categoryLabel",
 				category_tag AS "categoryTag",
-				description, project_id AS "projectId", created_at AS "createdAt"
+				description, project_id AS "projectId", created_at AS "createdAt",
+				photo
 			FROM transactions WHERE user_id = $1 ORDER BY created_at DESC`,
 			[user.id],
 		),

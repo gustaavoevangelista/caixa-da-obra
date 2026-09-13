@@ -13,7 +13,7 @@ export async function PUT(
 
 	const { id } = await params;
 	const body = await request.json().catch(() => null);
-	const { type, amount, category, categoryLabel, categoryTag, description } =
+	const { type, amount, category, categoryLabel, categoryTag, description, photo } =
 		body ?? {};
 
 	if (
@@ -21,7 +21,8 @@ export async function PUT(
 		typeof amount !== 'number' ||
 		typeof category !== 'string' ||
 		typeof categoryLabel !== 'string' ||
-		typeof categoryTag !== 'string'
+		typeof categoryTag !== 'string' ||
+		(photo !== undefined && photo !== null && typeof photo !== 'string')
 	) {
 		return NextResponse.json(
 			{ error: 'Invalid transaction payload' },
@@ -31,8 +32,8 @@ export async function PUT(
 
 	const result = await pool.query(
 		`UPDATE transactions
-		SET type = $1, amount = $2, category = $3, category_label = $4, category_tag = $5, description = $6
-		WHERE id = $7 AND user_id = $8`,
+		SET type = $1, amount = $2, category = $3, category_label = $4, category_tag = $5, description = $6, photo = $7
+		WHERE id = $8 AND user_id = $9`,
 		[
 			type,
 			amount,
@@ -40,6 +41,7 @@ export async function PUT(
 			categoryLabel,
 			categoryTag,
 			typeof description === 'string' ? description : '',
+			typeof photo === 'string' ? photo : null,
 			id,
 			user.id,
 		],

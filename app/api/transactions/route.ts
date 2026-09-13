@@ -19,6 +19,7 @@ export async function POST(request: Request) {
 		description,
 		createdAt,
 		projectId,
+		photo,
 	} = body ?? {};
 
 	if (
@@ -27,7 +28,8 @@ export async function POST(request: Request) {
 		typeof amount !== 'number' ||
 		typeof category !== 'string' ||
 		typeof categoryLabel !== 'string' ||
-		typeof categoryTag !== 'string'
+		typeof categoryTag !== 'string' ||
+		(photo !== undefined && photo !== null && typeof photo !== 'string')
 	) {
 		return NextResponse.json(
 			{ error: 'Invalid transaction payload' },
@@ -37,8 +39,8 @@ export async function POST(request: Request) {
 
 	await pool.query(
 		`INSERT INTO transactions
-			(id, user_id, type, amount, category, category_label, category_tag, description, project_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			(id, user_id, type, amount, category, category_label, category_tag, description, project_id, created_at, photo)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		[
 			id,
 			user.id,
@@ -50,6 +52,7 @@ export async function POST(request: Request) {
 			typeof description === 'string' ? description : '',
 			typeof projectId === 'string' ? projectId : null,
 			typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
+			typeof photo === 'string' ? photo : null,
 		],
 	);
 

@@ -57,6 +57,7 @@ type Transaction = {
 	description: string;
 	createdAt: string;
 	projectId: string | null;
+	photo: string | null;
 };
 
 type Project = {
