@@ -69,6 +69,20 @@ type Project = {
 	status: 'active' | 'ended';
 };
 
+type InvoiceSummary = {
+	id: string;
+	number: number;
+	clientName: string;
+	total: number;
+	issuedAt: string;
+};
+
+type InvoiceDetail = InvoiceSummary & {
+	clientNif: string;
+	description: string;
+	projectId: string | null;
+};
+
 type SavedCategories = {
 	expense: Category[];
 	income: Category[];
@@ -132,6 +146,12 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const [invoiceSelection, setInvoiceSelection] = useState<Set<string>>(
 		new Set(),
 	);
+	const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
+	const [invoiceSheetOpen, setInvoiceSheetOpen] = useState(false);
+	const [invoiceClientName, setInvoiceClientName] = useState('');
+	const [invoiceClientNif, setInvoiceClientNif] = useState('');
+	const [invoiceDescription, setInvoiceDescription] = useState('');
+	const [invoiceError, setInvoiceError] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const [txType, setTxType] = useState<TransactionType>('expense');
 	const [amount, setAmount] = useState('');
@@ -217,8 +237,11 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	useEffect(() => {
 		const load = async () => {
 			try {
-				const res = await api('/api/state');
-				const data = await res.json();
+				const [stateRes, invoicesRes] = await Promise.all([
+					api('/api/state'),
+					api('/api/invoices'),
+				]);
+				const data = await stateRes.json();
 				setTransactions(data.transactions || []);
 				setProjects(data.projects || []);
 				setSelectedProject(data.selectedProject || GENERAL);
@@ -233,6 +256,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 				setInvoicedTransactionIds(
 					new Set<string>(data.invoicedTransactionIds || []),
 				);
+				const invoicesData = await invoicesRes.json();
+				setInvoices(invoicesData.invoices || []);
 			} catch (error) {
 				console.error('Failed to load data:', error);
 			} finally {
@@ -733,6 +758,75 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 			else next.add(id);
 			return next;
 		});
+	};
+
+	const openInvoiceSheet = () => {
+		setInvoiceClientName('');
+		setInvoiceClientNif('');
+		setInvoiceDescription('');
+		setInvoiceError(null);
+		setInvoiceSheetOpen(true);
+	};
+
+	const closeInvoiceSheet = () => setInvoiceSheetOpen(false);
+
+	const handleGenerateInvoice = async () => {
+		const clientName = invoiceClientName.trim();
+		const clientNif = invoiceClientNif.trim();
+		const description = invoiceDescription.trim();
+		if (
+			!clientName ||
+			!clientNif ||
+			!description ||
+			selectedInvoiceTransactions.length === 0
+		) {
+			setInvoiceError(
+				'Preencha cliente, NIF e descrição, e selecione ao menos uma entrada.',
+			);
+			return;
+		}
+
+		try {
+			const res = await api('/api/invoices', {
+				method: 'POST',
+				body: JSON.stringify({
+					clientName,
+					clientNif,
+					description,
+					transactionIds: Array.from(invoiceSelection),
+					projectId: selectedProject === GENERAL ? null : selectedProject,
+				}),
+			});
+			const invoice: InvoiceDetail = await res.json();
+
+			setInvoicedTransactionIds((prev) => {
+				const next = new Set(prev);
+				invoiceSelection.forEach((id) => next.add(id));
+				return next;
+			});
+			setInvoices((prev) => [
+				{
+					id: invoice.id,
+					number: invoice.number,
+					clientName: invoice.clientName,
+					total: invoice.total,
+					issuedAt: invoice.issuedAt,
+				},
+				...prev,
+			]);
+			setInvoiceSelection(new Set());
+			setInvoiceSheetOpen(false);
+			openInvoicePrintWindow(invoice);
+		} catch (error) {
+			if (error instanceof Error && error.message.includes('409')) {
+				setInvoiceError(
+					'Uma ou mais entradas selecionadas já foram faturadas. Atualize a página e tente novamente.',
+				);
+				return;
+			}
+			console.error('Failed to generate invoice:', error);
+			setInvoiceError('Não foi possível gerar a fatura. Tente novamente.');
+		}
 	};
 
 	const grouped = useMemo(() => {
@@ -2161,6 +2255,102 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 									)}
 								</div>
 							)}
+						</div>
+					</div>
+				)}
+
+				{/* ---- GENERATE INVOICE SHEET ---- */}
+				{invoiceSheetOpen && (
+					<div className='absolute inset-0 z-20 flex flex-col justify-end sl-fade-enter'>
+						<div
+							className='absolute inset-0'
+							style={{ background: 'rgba(0,0,0,0.55)' }}
+							onClick={closeInvoiceSheet}
+						/>
+						<div
+							className='relative rounded-t-3xl p-5 pb-8 sl-sheet-enter'
+							style={{
+								background: 'var(--bg-raised)',
+								border: '1px solid var(--line)',
+								borderBottom: 'none',
+								maxHeight: '92dvh',
+								overflowY: 'auto',
+								WebkitOverflowScrolling: 'touch',
+							}}>
+							<div className='flex items-center justify-between mb-4'>
+								<div
+									className='sl-display text-2xl'
+									style={{ color: 'var(--yellow)' }}>
+									GERAR FATURA
+								</div>
+								<button
+									onClick={closeInvoiceSheet}
+									className='w-8 h-8 rounded-full flex items-center justify-center'
+									style={{ background: 'var(--bg-card)' }}>
+									<X size={16} />
+								</button>
+							</div>
+
+							<div className='text-center mb-4'>
+								<div
+									className='text-[10px] tracking-widest'
+									style={{ color: 'var(--text-dim)' }}>
+									TOTAL
+								</div>
+								<div className='sl-display text-4xl'>
+									€{formatMoney(invoiceSelectionTotal)}
+								</div>
+							</div>
+
+							<input
+								value={invoiceClientName}
+								onChange={(e) => setInvoiceClientName(e.target.value)}
+								placeholder='Nome do cliente'
+								className='w-full rounded-lg px-3 py-2.5 text-sm mb-3 outline-none'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+									color: 'var(--text)',
+								}}
+							/>
+							<input
+								value={invoiceClientNif}
+								onChange={(e) => setInvoiceClientNif(e.target.value)}
+								placeholder='NIF do cliente'
+								className='w-full rounded-lg px-3 py-2.5 text-sm mb-3 outline-none'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+									color: 'var(--text)',
+								}}
+							/>
+							<textarea
+								value={invoiceDescription}
+								onChange={(e) => setInvoiceDescription(e.target.value)}
+								placeholder='Descrição do trabalho realizado'
+								rows={3}
+								className='w-full rounded-lg px-3 py-2.5 text-sm mb-3 outline-none resize-none'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+									color: 'var(--text)',
+								}}
+							/>
+
+							{invoiceError && (
+								<div
+									className='text-xs mb-3 text-center'
+									style={{ color: 'var(--orange)' }}>
+									{invoiceError}
+								</div>
+							)}
+
+							<button
+								onClick={handleGenerateInvoice}
+								className='w-full rounded-xl py-3.5 text-sm font-bold tracking-widest'
+								style={{ background: 'var(--yellow)', color: '#1c1b19' }}>
+								GERAR E IMPRIMIR
+							</button>
 						</div>
 					</div>
 				)}
