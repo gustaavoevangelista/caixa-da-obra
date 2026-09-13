@@ -84,3 +84,27 @@ CREATE INDEX IF NOT EXISTS transactions_user_created_idx
 
 CREATE INDEX IF NOT EXISTS transactions_user_project_idx
 	ON transactions (user_id, project_id);
+
+CREATE TABLE IF NOT EXISTS invoices (
+	id TEXT NOT NULL,
+	user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	number INTEGER NOT NULL,
+	client_name TEXT NOT NULL,
+	client_nif TEXT NOT NULL,
+	description TEXT NOT NULL,
+	total NUMERIC(12, 2) NOT NULL,
+	project_id TEXT,
+	issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	PRIMARY KEY (user_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS invoice_transactions (
+	user_id UUID NOT NULL,
+	invoice_id TEXT NOT NULL,
+	transaction_id TEXT NOT NULL,
+	PRIMARY KEY (user_id, invoice_id, transaction_id),
+	FOREIGN KEY (user_id, invoice_id) REFERENCES invoices (user_id, id) ON DELETE CASCADE,
+	FOREIGN KEY (user_id, transaction_id) REFERENCES transactions (user_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS invoices_user_number_idx ON invoices (user_id, number);
