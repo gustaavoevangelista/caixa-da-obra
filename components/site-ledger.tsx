@@ -135,6 +135,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const [photoError, setPhotoError] = useState<string | null>(null);
 	const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
+	const sheetOpenTokenRef = useRef(0);
 	const [sheetDeleteConfirm, setSheetDeleteConfirm] = useState(false);
 	const [longPressId, setLongPressId] = useState<string | null>(null);
 	const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -479,16 +480,19 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		const file = e.target.files?.[0];
 		e.target.value = '';
 		if (!file) return;
+		const openedFor = sheetOpenTokenRef.current;
 		try {
 			const dataUrl = await resizeReceiptPhotoToDataUrl(file);
+			if (sheetOpenTokenRef.current !== openedFor) return;
 			setPhotoDraft(dataUrl);
 			setPhotoError(null);
 		} catch (err) {
 			console.error('Receipt photo processing error:', err);
+			if (sheetOpenTokenRef.current !== openedFor) return;
 			setPhotoError(
 				err instanceof Error && err.message === 'Photo too large'
-					? 'Foto muito grande mesmo apos compressao. Tente outra foto.'
-					: 'Nao foi possivel processar a foto. Tente novamente.',
+					? 'Foto muito grande mesmo após compressão. Tente outra foto.'
+					: 'Não foi possível processar a foto. Tente novamente.',
 			);
 		}
 	};
@@ -541,11 +545,13 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	};
 
 	const openSheet = () => {
+		sheetOpenTokenRef.current += 1;
 		resetSheet();
 		setSheetOpen(true);
 	};
 
 	const openEditSheet = (t: Transaction) => {
+		sheetOpenTokenRef.current += 1;
 		setTxType(t.type);
 		setAmount(String(t.amount));
 		setCategory(t.category);
@@ -559,6 +565,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	};
 
 	const closeSheet = () => {
+		sheetOpenTokenRef.current += 1;
 		setSheetOpen(false);
 		resetSheet();
 	};

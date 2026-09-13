@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getSessionUser } from '@/lib/session';
+import { MAX_RECEIPT_PHOTO_DATA_URL_LENGTH } from '@/components/receipt-photo';
 
 export async function POST(request: Request) {
 	const user = await getSessionUser();
@@ -29,7 +30,9 @@ export async function POST(request: Request) {
 		typeof category !== 'string' ||
 		typeof categoryLabel !== 'string' ||
 		typeof categoryTag !== 'string' ||
-		(photo !== undefined && photo !== null && typeof photo !== 'string')
+		(photo !== undefined && photo !== null && typeof photo !== 'string') ||
+		(typeof photo === 'string' &&
+			photo.length > MAX_RECEIPT_PHOTO_DATA_URL_LENGTH)
 	) {
 		return NextResponse.json(
 			{ error: 'Invalid transaction payload' },
