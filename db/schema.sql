@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS transactions (
 	PRIMARY KEY (user_id, id)
 );
 
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS photo TEXT;
+
 -- Table originally created with an auto-incrementing position; callers now
 -- set position explicitly (see comment above), so drop the old default.
 ALTER TABLE categories ALTER COLUMN position DROP DEFAULT;
