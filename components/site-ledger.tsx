@@ -25,6 +25,7 @@ import {
 	ArrowLeft,
 	User,
 	Camera,
+	Receipt,
 } from 'lucide-react';
 import {
 	buildReportData,
@@ -45,6 +46,7 @@ import {
 	type Category,
 } from '@/lib/default-categories';
 import { resizeReceiptPhotoToDataUrl } from './receipt-photo';
+import { sumTransactionAmounts } from './invoices';
 
 type TransactionType = 'expense' | 'income';
 
@@ -123,7 +125,13 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const router = useRouter();
 	const [transactions, setTransactions] = useState<Transaction[]>([]);
 	const [loaded, setLoaded] = useState(false);
-	const [view, setView] = useState<'home' | 'reports'>('home');
+	const [view, setView] = useState<'home' | 'reports' | 'invoices'>('home');
+	const [invoicedTransactionIds, setInvoicedTransactionIds] = useState<
+		Set<string>
+	>(new Set());
+	const [invoiceSelection, setInvoiceSelection] = useState<Set<string>>(
+		new Set(),
+	);
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const [txType, setTxType] = useState<TransactionType>('expense');
 	const [amount, setAmount] = useState('');
@@ -222,6 +230,9 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 				);
 				setCompanyName(data.companyName || '');
 				setCompanyLogo(data.companyLogo || null);
+				setInvoicedTransactionIds(
+					new Set<string>(data.invoicedTransactionIds || []),
+				);
 			} catch (error) {
 				console.error('Failed to load data:', error);
 			} finally {
@@ -697,6 +708,33 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		[transactions, selectedProject],
 	);
 
+	const invoiceCandidates = useMemo(
+		() =>
+			scopedTransactions.filter(
+				(t) => t.type === 'income' && !invoicedTransactionIds.has(t.id),
+			),
+		[scopedTransactions, invoicedTransactionIds],
+	);
+
+	const selectedInvoiceTransactions = useMemo(
+		() => invoiceCandidates.filter((t) => invoiceSelection.has(t.id)),
+		[invoiceCandidates, invoiceSelection],
+	);
+
+	const invoiceSelectionTotal = useMemo(
+		() => sumTransactionAmounts(selectedInvoiceTransactions),
+		[selectedInvoiceTransactions],
+	);
+
+	const toggleInvoiceSelection = (id: string) => {
+		setInvoiceSelection((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
 	const grouped = useMemo(() => {
 		const sorted = [...scopedTransactions].sort(
 			(a, b) =>
@@ -1115,17 +1153,32 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 						</button>
 						<button
 							onClick={() =>
-								setView(view === 'home' ? 'reports' : 'home')
+								setView(view === 'reports' ? 'home' : 'reports')
 							}
 							className='w-11 h-11 rounded-full flex items-center justify-center border'
 							style={{
 								borderColor: 'var(--line)',
 								background: 'var(--bg-raised)',
 							}}>
-							{view === 'home' ? (
-								<BarChart3 size={24} color='var(--yellow)' />
-							) : (
+							{view === 'reports' ? (
 								<ArrowLeft size={24} color='var(--yellow)' />
+							) : (
+								<BarChart3 size={24} color='var(--yellow)' />
+							)}
+						</button>
+						<button
+							onClick={() =>
+								setView(view === 'invoices' ? 'home' : 'invoices')
+							}
+							className='w-11 h-11 rounded-full flex items-center justify-center border'
+							style={{
+								borderColor: 'var(--line)',
+								background: 'var(--bg-raised)',
+							}}>
+							{view === 'invoices' ? (
+								<ArrowLeft size={24} color='var(--yellow)' />
+							) : (
+								<Receipt size={24} color='var(--yellow)' />
 							)}
 						</button>
 					</div>
@@ -1415,7 +1468,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 							<Plus size={28} color='#1c1b19' strokeWidth={2.5} />
 						</button>
 					</>
-				) : (
+				) : view === 'reports' ? (
 					/* ---- REPORTS VIEW ---- */
 					<div className='flex-1 overflow-y-auto sl-scrollbar-none px-5 pb-10 sl-fade-enter'>
 						<div className='flex items-center justify-between mb-5'>
@@ -1656,6 +1709,130 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 							{reportData.count === 1 ? 'ENTRADA' : 'ENTRADAS'}{' '}
 							ESTE MÊS
 						</div>
+					</div>
+				) : (
+					/* ---- INVOICES VIEW ---- */
+					<div className='flex-1 overflow-y-auto sl-scrollbar-none px-5 pb-32 sl-fade-enter relative'>
+						<div className='flex items-center justify-between mb-4'>
+							<div
+								className='sl-display text-2xl'
+								style={{ color: 'var(--yellow)' }}>
+								FATURAS
+							</div>
+						</div>
+
+						{invoiceCandidates.length === 0 ? (
+							<div
+								className='text-xs'
+								style={{ color: 'var(--text-dim)' }}>
+								Sem receitas disponíveis para faturar.
+							</div>
+						) : (
+							<div className='space-y-2 mb-24'>
+								{invoiceCandidates.map((t) => (
+									<button
+										key={t.id}
+										onClick={() =>
+											toggleInvoiceSelection(t.id)
+										}
+										className='w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left'
+										style={{
+											background: invoiceSelection.has(
+												t.id,
+											)
+												? 'rgba(244,196,48,0.14)'
+												: 'var(--bg-card)',
+											border:
+												'1px solid ' +
+												(invoiceSelection.has(t.id)
+													? 'var(--yellow)'
+													: 'var(--line)'),
+										}}>
+										<div
+											className='w-5 h-5 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold'
+											style={{
+												background: invoiceSelection.has(
+													t.id,
+												)
+													? 'var(--yellow)'
+													: 'transparent',
+												color: '#1c1b19',
+												border:
+													'1px solid ' +
+													(invoiceSelection.has(
+														t.id,
+													)
+														? 'var(--yellow)'
+														: 'var(--line)'),
+											}}>
+											{invoiceSelection.has(t.id)
+												? '✓'
+												: ''}
+										</div>
+										<div className='flex-1 min-w-0'>
+											<div className='text-sm truncate'>
+												{t.description ||
+													t.categoryLabel}
+											</div>
+											<div
+												className='text-[10px]'
+												style={{
+													color: 'var(--text-dim)',
+												}}>
+												{new Date(
+													t.createdAt,
+												).toLocaleDateString(
+													'pt-PT',
+												)}
+											</div>
+										</div>
+										<div
+											className='text-sm font-semibold shrink-0'
+											style={{
+												color: 'var(--green)',
+											}}>
+											€{formatMoney(t.amount)}
+										</div>
+									</button>
+								))}
+							</div>
+						)}
+
+						{invoiceSelection.size > 0 && (
+							<div
+								className='absolute bottom-0 left-0 right-0 flex justify-center px-5 pb-6 pt-4'
+								style={{
+									background:
+										'linear-gradient(to top, var(--bg) 60%, transparent)',
+								}}>
+								<div className='w-full flex items-center gap-3'>
+									<div className='flex-1'>
+										<div
+											className='text-[10px] tracking-widest'
+											style={{
+												color: 'var(--text-dim)',
+											}}>
+											TOTAL SELECIONADO
+										</div>
+										<div className='text-lg font-semibold'>
+											€
+											{formatMoney(
+												invoiceSelectionTotal,
+											)}
+										</div>
+									</div>
+									<button
+										onClick={openInvoiceSheet}
+										className='rounded-xl px-5 py-3 text-xs font-bold tracking-widest'
+										style={{
+											background: 'var(--yellow)',
+											color: '#1c1b19',
+										}}>
+										GERAR FATURA
+									</button>
+								</div>
+							</div>
+						)}
 					</div>
 				)}
 
