@@ -148,6 +148,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	);
 	const [invoices, setInvoices] = useState<InvoiceSummary[]>([]);
 	const [invoiceSheetOpen, setInvoiceSheetOpen] = useState(false);
+	const [invoiceHistoryOpen, setInvoiceHistoryOpen] = useState(false);
 	const [invoiceClientName, setInvoiceClientName] = useState('');
 	const [invoiceClientNif, setInvoiceClientNif] = useState('');
 	const [invoiceDescription, setInvoiceDescription] = useState('');
@@ -1033,6 +1034,89 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		previewWindow.focus();
 	};
 
+	const buildPrintableInvoiceHtml = (invoice: InvoiceDetail) => `<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+	<title>${escapeHtml(`Fatura ${invoice.number}`)}</title>
+	<style>
+		body { font-family: Arial, sans-serif; color: #1f2933; margin: 32px; }
+		header { border-bottom: 2px solid #d6a900; padding-bottom: 16px; margin-bottom: 24px; }
+		h1 { margin: 0 0 8px; font-size: 24px; }
+		.meta { color: #6b7280; font-size: 12px; }
+		.preview-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+		.preview-toolbar button { border: 1px solid #d8dee4; background: #fff; color: #1f2933; border-radius: 8px; padding: 10px 12px; cursor: pointer; font-size: 14px; min-width: 140px; min-height: 46px; font-weight: 700; }
+		.preview-toolbar .primary { background: #d6a900; color: #fff; border-color: #d6a900; }
+		.field { margin: 18px 0; }
+		.field .label { color: #6b7280; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+		.field .value { margin-top: 4px; font-size: 14px; white-space: pre-wrap; }
+		.total { margin-top: 28px; border-top: 1px solid #e5e7eb; padding-top: 16px; display: flex; justify-content: space-between; align-items: baseline; }
+		.total .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
+		.total .value { font-size: 28px; font-weight: 700; }
+		@media print { body { margin: 20mm; } .preview-toolbar { display: none !important; } }
+	</style>
+</head>
+<body>
+	<div class="preview-toolbar">
+		<button type="button" onclick="window.close()">Voltar ao app</button>
+		<button type="button" class="primary" onclick="window.print()">Exportar PDF</button>
+	</div>
+	<header>
+		<h1>Fatura #${invoice.number}</h1>
+		<div class="meta">Emitida em: ${escapeHtml(new Date(invoice.issuedAt).toLocaleDateString('pt-PT'))}</div>
+		${companyName ? `<div class="meta">${escapeHtml(companyName)}</div>` : ''}
+	</header>
+	<div class="field">
+		<div class="label">Cliente</div>
+		<div class="value">${escapeHtml(invoice.clientName)}</div>
+	</div>
+	<div class="field">
+		<div class="label">NIF do cliente</div>
+		<div class="value">${escapeHtml(invoice.clientNif)}</div>
+	</div>
+	<div class="field">
+		<div class="label">Descrição do trabalho</div>
+		<div class="value">${escapeHtml(invoice.description)}</div>
+	</div>
+	<div class="total">
+		<div class="label">Total</div>
+		<div class="value">€${formatMoney(invoice.total)}</div>
+	</div>
+</body>
+</html>`;
+
+	const openInvoicePrintWindow = (invoice: InvoiceDetail) => {
+		const html = buildPrintableInvoiceHtml(invoice);
+		const blob = new Blob([html], { type: 'text/html' });
+		const url = URL.createObjectURL(blob);
+		const previewWindow = window.open(url, '_blank', PRINT_WINDOW_FEATURES);
+		if (!previewWindow) {
+			URL.revokeObjectURL(url);
+			setInvoiceError(
+				'Não foi possível abrir a janela de impressão. Permita pop-ups para exportar o PDF.',
+			);
+			return;
+		}
+		previewWindow.addEventListener(
+			'load',
+			() => URL.revokeObjectURL(url),
+			{ once: true },
+		);
+		previewWindow.focus();
+	};
+
+	const openInvoicePrintWindowById = async (id: string) => {
+		try {
+			const res = await api(`/api/invoices/${id}`);
+			const invoice: InvoiceDetail = await res.json();
+			openInvoicePrintWindow(invoice);
+		} catch (error) {
+			console.error('Failed to load invoice:', error);
+			setInvoiceError('Não foi possível abrir a fatura.');
+		}
+	};
+
 	const projectSelector = (
 		<div>
 			<div className='flex items-center justify-between px-5 pb-2 -mt-1'>
@@ -1813,17 +1897,84 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 								style={{ color: 'var(--yellow)' }}>
 								FATURAS
 							</div>
+							<button
+								onClick={() =>
+									setInvoiceHistoryOpen((v) => !v)
+								}
+								className='text-[10px] tracking-widest px-3 py-2 rounded-lg'
+								style={{
+									background: 'var(--bg-card)',
+									border: '1px solid var(--line)',
+									color: 'var(--text)',
+								}}>
+								{invoiceHistoryOpen
+									? 'SELECIONAR'
+									: 'HISTÓRICO'}
+							</button>
 						</div>
 
-						{invoiceCandidates.length === 0 ? (
-							<div
-								className='text-xs'
-								style={{ color: 'var(--text-dim)' }}>
-								Sem receitas disponíveis para faturar.
-							</div>
-						) : (
-							<div className='space-y-2 mb-24'>
-								{invoiceCandidates.map((t) => (
+						{invoiceHistoryOpen &&
+							(invoices.length === 0 ? (
+								<div
+									className='text-xs'
+									style={{ color: 'var(--text-dim)' }}>
+									Nenhuma fatura gerada ainda.
+								</div>
+							) : (
+								<div className='space-y-2'>
+									{invoices.map((inv) => (
+										<button
+											key={inv.id}
+											onClick={() =>
+												openInvoicePrintWindowById(
+													inv.id,
+												)
+											}
+											className='w-full flex items-center justify-between px-4 py-3 rounded-xl text-left'
+											style={{
+												background: 'var(--bg-card)',
+												border: '1px solid var(--line)',
+											}}>
+											<div>
+												<div className='text-sm'>
+													Fatura #{inv.number} ·{' '}
+													{inv.clientName}
+												</div>
+												<div
+													className='text-[10px]'
+													style={{
+														color: 'var(--text-dim)',
+													}}>
+													{new Date(
+														inv.issuedAt,
+													).toLocaleDateString(
+														'pt-PT',
+													)}
+												</div>
+											</div>
+											<div
+												className='text-sm font-semibold'
+												style={{
+													color: 'var(--green)',
+												}}>
+												€{formatMoney(inv.total)}
+											</div>
+										</button>
+									))}
+								</div>
+							))}
+
+						{!invoiceHistoryOpen && (
+							<>
+								{invoiceCandidates.length === 0 ? (
+									<div
+										className='text-xs'
+										style={{ color: 'var(--text-dim)' }}>
+										Sem receitas disponíveis para faturar.
+									</div>
+								) : (
+									<div className='space-y-2 mb-24'>
+										{invoiceCandidates.map((t) => (
 									<button
 										key={t.id}
 										onClick={() =>
@@ -1926,6 +2077,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 									</button>
 								</div>
 							</div>
+						)}
+							</>
 						)}
 					</div>
 				)}
