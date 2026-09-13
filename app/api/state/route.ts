@@ -8,7 +8,7 @@ export async function GET() {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const [txRes, projRes, catRes, profileRes] = await Promise.all([
+	const [txRes, projRes, catRes, profileRes, invoicedRes] = await Promise.all([
 		pool.query(
 			`SELECT id, type, amount, category,
 				category_label AS "categoryLabel",
@@ -30,6 +30,10 @@ export async function GET() {
 			`SELECT company_name AS "companyName", company_logo AS "companyLogo",
 				selected_project AS "selectedProject"
 			FROM profiles WHERE user_id = $1`,
+			[user.id],
+		),
+		pool.query(
+			'SELECT transaction_id FROM invoice_transactions WHERE user_id = $1',
 			[user.id],
 		),
 	]);
@@ -63,5 +67,6 @@ export async function GET() {
 		companyName: profile.companyName,
 		companyLogo: profile.companyLogo,
 		selectedProject: profile.selectedProject,
+		invoicedTransactionIds: invoicedRes.rows.map((row) => row.transaction_id),
 	});
 }
