@@ -44,6 +44,7 @@ import {
 	INCOME_CATEGORIES,
 	type Category,
 } from '@/lib/default-categories';
+import { resizeReceiptPhotoToDataUrl } from './receipt-photo';
 
 type TransactionType = 'expense' | 'income';
 
@@ -130,6 +131,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const [description, setDescription] = useState('');
 	const [monthOffset, setMonthOffset] = useState(0);
 	const [saveError, setSaveError] = useState(false);
+	const [photoDraft, setPhotoDraft] = useState<string | null>(null);
+	const [photoError, setPhotoError] = useState<string | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [sheetDeleteConfirm, setSheetDeleteConfirm] = useState(false);
 	const [longPressId, setLongPressId] = useState<string | null>(null);
@@ -471,6 +474,29 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		setProfileOpen(false);
 	};
 
+	const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		e.target.value = '';
+		if (!file) return;
+		try {
+			const dataUrl = await resizeReceiptPhotoToDataUrl(file);
+			setPhotoDraft(dataUrl);
+			setPhotoError(null);
+		} catch (err) {
+			console.error('Receipt photo processing error:', err);
+			setPhotoError(
+				err instanceof Error && err.message === 'Photo too large'
+					? 'Foto muito grande mesmo apos compressao. Tente outra foto.'
+					: 'Nao foi possivel processar a foto. Tente novamente.',
+			);
+		}
+	};
+
+	const handleRemovePhoto = () => {
+		setPhotoDraft(null);
+		setPhotoError(null);
+	};
+
 	const selectProject = (id: string) => changeSelectedProject(id);
 
 	const handleAddProject = async () => {
@@ -509,6 +535,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		setSaveError(false);
 		setEditingId(null);
 		setSheetDeleteConfirm(false);
+		setPhotoDraft(null);
+		setPhotoError(null);
 	};
 
 	const openSheet = () => {
@@ -524,6 +552,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 		setSaveError(false);
 		setEditingId(t.id);
 		setSheetDeleteConfirm(false);
+		setPhotoDraft(t.photo);
+		setPhotoError(null);
 		setSheetOpen(true);
 	};
 
@@ -568,6 +598,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 				categoryLabel: catObj.label,
 				categoryTag: catObj.tag,
 				description: description.trim(),
+				photo: photoDraft,
 			});
 			closeSheet();
 			return;
@@ -583,6 +614,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 			description: description.trim(),
 			createdAt: new Date().toISOString(),
 			projectId: selectedProject === GENERAL ? null : selectedProject,
+			photo: photoDraft,
 		};
 		await createTransaction(entry);
 		closeSheet();
@@ -1756,6 +1788,50 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 									color: 'var(--text)',
 								}}
 							/>
+
+							<div className='flex items-center gap-3 mb-4'>
+								<label
+									className='flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs cursor-pointer'
+									style={{
+										background: 'var(--bg-card)',
+										border: '1px solid var(--line)',
+										color: 'var(--text)',
+									}}>
+									<Camera size={14} />
+									{photoDraft ? 'Trocar foto' : 'Anexar foto do recibo'}
+									<input
+										type='file'
+										accept='image/*'
+										capture='environment'
+										onChange={handlePhotoChange}
+										className='hidden'
+									/>
+								</label>
+								{photoDraft && (
+									<div className='relative w-11 h-11 rounded-lg overflow-hidden shrink-0'>
+										<img
+											src={photoDraft}
+											alt='Recibo'
+											className='w-full h-full object-cover'
+										/>
+										<button
+											type='button'
+											onClick={handleRemovePhoto}
+											className='absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center'
+											style={{ background: 'var(--orange)', color: '#1c1b19' }}>
+											<X size={12} />
+										</button>
+									</div>
+								)}
+							</div>
+
+							{photoError && (
+								<div
+									className='text-xs mb-3 text-center'
+									style={{ color: 'var(--orange)' }}>
+									{photoError}
+								</div>
+							)}
 
 							{saveError && (
 								<div
