@@ -139,6 +139,21 @@ export async function POST(request: Request) {
 		});
 	} catch (error) {
 		await client.query('ROLLBACK');
+		// A unique-index violation here means a concurrent request won the
+		// race (double-submit billing the same transaction twice, or two
+		// invoices landing on the same per-user number) — the checks above
+		// already passed for both requests before either committed.
+		if (
+			error &&
+			typeof error === 'object' &&
+			'code' in error &&
+			(error as { code?: string }).code === '23505'
+		) {
+			return NextResponse.json(
+				{ error: 'One or more transactions are already invoiced' },
+				{ status: 409 },
+			);
+		}
 		throw error;
 	} finally {
 		client.release();

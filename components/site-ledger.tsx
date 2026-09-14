@@ -153,6 +153,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const [invoiceClientNif, setInvoiceClientNif] = useState('');
 	const [invoiceDescription, setInvoiceDescription] = useState('');
 	const [invoiceError, setInvoiceError] = useState<string | null>(null);
+	const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const [txType, setTxType] = useState<TransactionType>('expense');
 	const [amount, setAmount] = useState('');
@@ -238,10 +239,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	useEffect(() => {
 		const load = async () => {
 			try {
-				const [stateRes, invoicesRes] = await Promise.all([
-					api('/api/state'),
-					api('/api/invoices'),
-				]);
+				const stateRes = await api('/api/state');
 				const data = await stateRes.json();
 				setTransactions(data.transactions || []);
 				setProjects(data.projects || []);
@@ -257,12 +255,21 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 				setInvoicedTransactionIds(
 					new Set<string>(data.invoicedTransactionIds || []),
 				);
-				const invoicesData = await invoicesRes.json();
-				setInvoices(invoicesData.invoices || []);
 			} catch (error) {
 				console.error('Failed to load data:', error);
 			} finally {
 				setLoaded(true);
+			}
+
+			// Fetched separately so a failure here (network blip,
+			// un-migrated table, etc.) doesn't blank the whole app — the
+			// primary state above has already been applied by this point.
+			try {
+				const invoicesRes = await api('/api/invoices');
+				const invoicesData = await invoicesRes.json();
+				setInvoices(invoicesData.invoices || []);
+			} catch (error) {
+				console.error('Failed to load invoices:', error);
 			}
 		};
 
@@ -774,11 +781,11 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 	const handleGenerateInvoice = async () => {
 		const clientName = invoiceClientName.trim();
 		const clientNif = invoiceClientNif.trim();
-		const description = invoiceDescription.trim();
+		const invoiceWorkDescription = invoiceDescription.trim();
 		if (
 			!clientName ||
 			!clientNif ||
-			!description ||
+			!invoiceWorkDescription ||
 			selectedInvoiceTransactions.length === 0
 		) {
 			setInvoiceError(
@@ -787,14 +794,30 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 			return;
 		}
 
+		// Open the print window synchronously, within the click gesture, so
+		// popup blockers (Safari/iOS, Chrome transient-activation rules)
+		// don't block it. It gets navigated to the real content once the
+		// invoice is created below.
+		const previewWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
+		if (!previewWindow) {
+			setInvoiceError(
+				'Não foi possível abrir a janela de impressão. Permita pop-ups para exportar o PDF.',
+			);
+		} else {
+			setInvoiceError(null);
+		}
+
+		setInvoiceSubmitting(true);
 		try {
 			const res = await api('/api/invoices', {
 				method: 'POST',
 				body: JSON.stringify({
 					clientName,
 					clientNif,
-					description,
-					transactionIds: Array.from(invoiceSelection),
+					description: invoiceWorkDescription,
+					transactionIds: selectedInvoiceTransactions.map(
+						(t) => t.id,
+					),
 					projectId: selectedProject === GENERAL ? null : selectedProject,
 				}),
 			});
@@ -802,7 +825,7 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 
 			setInvoicedTransactionIds((prev) => {
 				const next = new Set(prev);
-				invoiceSelection.forEach((id) => next.add(id));
+				selectedInvoiceTransactions.forEach((t) => next.add(t.id));
 				return next;
 			});
 			setInvoices((prev) => [
@@ -817,16 +840,24 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 			]);
 			setInvoiceSelection(new Set());
 			setInvoiceSheetOpen(false);
-			openInvoicePrintWindow(invoice);
+			// The invoice was created regardless of whether the print window
+			// was available — only populate it if it is.
+			if (previewWindow) {
+				openInvoicePrintWindow(previewWindow, invoice);
+			}
 		} catch (error) {
+			// Don't leave a blank tab open if invoice creation failed.
+			if (previewWindow) previewWindow.close();
 			if (error instanceof Error && error.message.includes('409')) {
 				setInvoiceError(
 					'Uma ou mais entradas selecionadas já foram faturadas. Atualize a página e tente novamente.',
 				);
-				return;
+			} else {
+				console.error('Failed to generate invoice:', error);
+				setInvoiceError('Não foi possível gerar a fatura. Tente novamente.');
 			}
-			console.error('Failed to generate invoice:', error);
-			setInvoiceError('Não foi possível gerar a fatura. Tente novamente.');
+		} finally {
+			setInvoiceSubmitting(false);
 		}
 	};
 
@@ -1086,33 +1117,42 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 </body>
 </html>`;
 
-	const openInvoicePrintWindow = (invoice: InvoiceDetail) => {
+	// Populates an already-open window (opened synchronously within a user
+	// gesture by the caller, to avoid popup blockers) with the invoice's
+	// printable content.
+	const openInvoicePrintWindow = (
+		previewWindow: Window,
+		invoice: InvoiceDetail,
+	) => {
 		const html = buildPrintableInvoiceHtml(invoice);
 		const blob = new Blob([html], { type: 'text/html' });
 		const url = URL.createObjectURL(blob);
-		const previewWindow = window.open(url, '_blank', PRINT_WINDOW_FEATURES);
+		previewWindow.addEventListener(
+			'load',
+			() => URL.revokeObjectURL(url),
+			{ once: true },
+		);
+		previewWindow.location.href = url;
+		previewWindow.focus();
+	};
+
+	const openInvoicePrintWindowById = async (id: string) => {
+		// Open synchronously within the click gesture so popup blockers
+		// don't block it; if it's blocked there's no point fetching.
+		const previewWindow = window.open('', '_blank', PRINT_WINDOW_FEATURES);
 		if (!previewWindow) {
-			URL.revokeObjectURL(url);
 			setInvoiceError(
 				'Não foi possível abrir a janela de impressão. Permita pop-ups para exportar o PDF.',
 			);
 			return;
 		}
 		setInvoiceError(null);
-		previewWindow.addEventListener(
-			'load',
-			() => URL.revokeObjectURL(url),
-			{ once: true },
-		);
-		previewWindow.focus();
-	};
-
-	const openInvoicePrintWindowById = async (id: string) => {
 		try {
 			const res = await api(`/api/invoices/${id}`);
 			const invoice: InvoiceDetail = await res.json();
-			openInvoicePrintWindow(invoice);
+			openInvoicePrintWindow(previewWindow, invoice);
 		} catch (error) {
+			previewWindow.close();
 			console.error('Failed to load invoice:', error);
 			setInvoiceError('Não foi possível abrir a fatura.');
 		}
@@ -1891,8 +1931,8 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 					</div>
 				) : (
 					/* ---- INVOICES VIEW ---- */
-					<div className='flex-1 overflow-y-auto sl-scrollbar-none px-5 pb-32 sl-fade-enter relative'>
-						<div className='flex items-center justify-between mb-4'>
+					<>
+						<div className='px-5 flex items-center justify-between mb-4'>
 							<div
 								className='sl-display text-2xl'
 								style={{ color: 'var(--yellow)' }}>
@@ -1914,68 +1954,70 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 							</button>
 						</div>
 
-						{invoiceError && !invoiceSheetOpen && (
-							<div
-								className='text-xs mb-4'
-								style={{ color: 'var(--orange)' }}>
-								{invoiceError}
-							</div>
-						)}
+						{projectSelector}
 
-						{invoiceHistoryOpen &&
-							(invoices.length === 0 ? (
+						<div className='flex-1 overflow-y-auto sl-scrollbar-none px-5 pb-32 sl-fade-enter'>
+							{invoiceError && !invoiceSheetOpen && (
 								<div
-									className='text-xs'
-									style={{ color: 'var(--text-dim)' }}>
-									Nenhuma fatura gerada ainda.
+									className='text-xs mb-4'
+									style={{ color: 'var(--orange)' }}>
+									{invoiceError}
 								</div>
-							) : (
-								<div className='space-y-2'>
-									{invoices.map((inv) => (
-										<button
-											key={inv.id}
-											onClick={() =>
-												openInvoicePrintWindowById(
-													inv.id,
-												)
-											}
-											className='w-full flex items-center justify-between px-4 py-3 rounded-xl text-left'
-											style={{
-												background: 'var(--bg-card)',
-												border: '1px solid var(--line)',
-											}}>
-											<div>
-												<div className='text-sm'>
-													Fatura #{inv.number} ·{' '}
-													{inv.clientName}
+							)}
+
+							{invoiceHistoryOpen &&
+								(invoices.length === 0 ? (
+									<div
+										className='text-xs'
+										style={{ color: 'var(--text-dim)' }}>
+										Nenhuma fatura gerada ainda.
+									</div>
+								) : (
+									<div className='space-y-2'>
+										{invoices.map((inv) => (
+											<button
+												key={inv.id}
+												onClick={() =>
+													openInvoicePrintWindowById(
+														inv.id,
+													)
+												}
+												className='w-full flex items-center justify-between px-4 py-3 rounded-xl text-left'
+												style={{
+													background: 'var(--bg-card)',
+													border: '1px solid var(--line)',
+												}}>
+												<div>
+													<div className='text-sm'>
+														Fatura #{inv.number} ·{' '}
+														{inv.clientName}
+													</div>
+													<div
+														className='text-[10px]'
+														style={{
+															color: 'var(--text-dim)',
+														}}>
+														{new Date(
+															inv.issuedAt,
+														).toLocaleDateString(
+															'pt-PT',
+														)}
+													</div>
 												</div>
 												<div
-													className='text-[10px]'
+													className='text-sm font-semibold'
 													style={{
-														color: 'var(--text-dim)',
+														color: 'var(--green)',
 													}}>
-													{new Date(
-														inv.issuedAt,
-													).toLocaleDateString(
-														'pt-PT',
-													)}
+													€{formatMoney(inv.total)}
 												</div>
-											</div>
-											<div
-												className='text-sm font-semibold'
-												style={{
-													color: 'var(--green)',
-												}}>
-												€{formatMoney(inv.total)}
-											</div>
-										</button>
-									))}
-								</div>
-							))}
+											</button>
+										))}
+									</div>
+								))}
 
-						{!invoiceHistoryOpen && (
-							<>
-								{invoiceCandidates.length === 0 ? (
+							{!invoiceHistoryOpen &&
+								(invoiceCandidates.length === 0 ? (
 									<div
 										className='text-xs'
 										style={{ color: 'var(--text-dim)' }}>
@@ -1984,112 +2026,112 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 								) : (
 									<div className='space-y-2 mb-24'>
 										{invoiceCandidates.map((t) => (
-									<button
-										key={t.id}
-										onClick={() =>
-											toggleInvoiceSelection(t.id)
-										}
-										className='w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left'
-										style={{
-											background: invoiceSelection.has(
-												t.id,
-											)
-												? 'rgba(244,196,48,0.14)'
-												: 'var(--bg-card)',
-											border:
-												'1px solid ' +
-												(invoiceSelection.has(t.id)
-													? 'var(--yellow)'
-													: 'var(--line)'),
-										}}>
-										<div
-											className='w-5 h-5 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold'
-											style={{
-												background: invoiceSelection.has(
-													t.id,
-												)
-													? 'var(--yellow)'
-													: 'transparent',
-												color: '#1c1b19',
-												border:
-													'1px solid ' +
-													(invoiceSelection.has(
+											<button
+												key={t.id}
+												onClick={() =>
+													toggleInvoiceSelection(t.id)
+												}
+												className='w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left'
+												style={{
+													background: invoiceSelection.has(
 														t.id,
 													)
-														? 'var(--yellow)'
-														: 'var(--line)'),
-											}}>
-											{invoiceSelection.has(t.id)
-												? '✓'
-												: ''}
-										</div>
-										<div className='flex-1 min-w-0'>
-											<div className='text-sm truncate'>
-												{t.description ||
-													t.categoryLabel}
-											</div>
+														? 'rgba(244,196,48,0.14)'
+														: 'var(--bg-card)',
+													border:
+														'1px solid ' +
+														(invoiceSelection.has(t.id)
+															? 'var(--yellow)'
+															: 'var(--line)'),
+												}}>
+												<div
+													className='w-5 h-5 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold'
+													style={{
+														background: invoiceSelection.has(
+															t.id,
+														)
+															? 'var(--yellow)'
+															: 'transparent',
+														color: '#1c1b19',
+														border:
+															'1px solid ' +
+															(invoiceSelection.has(
+																t.id,
+															)
+																? 'var(--yellow)'
+																: 'var(--line)'),
+													}}>
+													{invoiceSelection.has(t.id)
+														? '✓'
+														: ''}
+												</div>
+												<div className='flex-1 min-w-0'>
+													<div className='text-sm truncate'>
+														{t.description ||
+															t.categoryLabel}
+													</div>
+													<div
+														className='text-[10px]'
+														style={{
+															color: 'var(--text-dim)',
+														}}>
+														{new Date(
+															t.createdAt,
+														).toLocaleDateString(
+															'pt-PT',
+														)}
+													</div>
+												</div>
+												<div
+													className='text-sm font-semibold shrink-0'
+													style={{
+														color: 'var(--green)',
+													}}>
+													€{formatMoney(t.amount)}
+												</div>
+											</button>
+										))}
+									</div>
+								))}
+						</div>
+
+						{!invoiceHistoryOpen &&
+							selectedInvoiceTransactions.length > 0 && (
+								<div
+									className='absolute bottom-0 left-0 right-0 flex justify-center px-5 pb-6 pt-4'
+									style={{
+										background:
+											'linear-gradient(to top, var(--bg) 60%, transparent)',
+									}}>
+									<div className='w-full flex items-center gap-3'>
+										<div className='flex-1'>
 											<div
-												className='text-[10px]'
+												className='text-[10px] tracking-widest'
 												style={{
 													color: 'var(--text-dim)',
 												}}>
-												{new Date(
-													t.createdAt,
-												).toLocaleDateString(
-													'pt-PT',
+												TOTAL SELECIONADO
+											</div>
+											<div className='text-lg font-semibold'>
+												€
+												{formatMoney(
+													invoiceSelectionTotal,
 												)}
 											</div>
 										</div>
-										<div
-											className='text-sm font-semibold shrink-0'
+										<button
+											onClick={openInvoiceSheet}
+											className='rounded-xl px-5 py-3 text-xs font-bold tracking-widest'
 											style={{
-												color: 'var(--green)',
+												background: 'var(--yellow)',
+												color: '#1c1b19',
 											}}>
-											€{formatMoney(t.amount)}
-										</div>
-									</button>
-								))}
-							</div>
-						)}
-
-						{invoiceSelection.size > 0 && (
-							<div
-								className='absolute bottom-0 left-0 right-0 flex justify-center px-5 pb-6 pt-4'
-								style={{
-									background:
-										'linear-gradient(to top, var(--bg) 60%, transparent)',
-								}}>
-								<div className='w-full flex items-center gap-3'>
-									<div className='flex-1'>
-										<div
-											className='text-[10px] tracking-widest'
-											style={{
-												color: 'var(--text-dim)',
-											}}>
-											TOTAL SELECIONADO
-										</div>
-										<div className='text-lg font-semibold'>
-											€
-											{formatMoney(
-												invoiceSelectionTotal,
-											)}
-										</div>
+											GERAR FATURA
+										</button>
 									</div>
-									<button
-										onClick={openInvoiceSheet}
-										className='rounded-xl px-5 py-3 text-xs font-bold tracking-widest'
-										style={{
-											background: 'var(--yellow)',
-											color: '#1c1b19',
-										}}>
-										GERAR FATURA
-									</button>
 								</div>
-							</div>
-						)}
-							</>
-						)}
-					</div>
+							)}
+					</>
 				)}
 
 				{/* ---- ADD TRANSACTION SHEET ---- */}
@@ -2509,9 +2551,19 @@ export default function SiteLedger({ isAdmin }: { isAdmin: boolean }) {
 
 							<button
 								onClick={handleGenerateInvoice}
+								disabled={invoiceSubmitting}
 								className='w-full rounded-xl py-3.5 text-sm font-bold tracking-widest'
-								style={{ background: 'var(--yellow)', color: '#1c1b19' }}>
-								GERAR E IMPRIMIR
+								style={{
+									background: 'var(--yellow)',
+									color: '#1c1b19',
+									opacity: invoiceSubmitting ? 0.6 : 1,
+									cursor: invoiceSubmitting
+										? 'not-allowed'
+										: 'pointer',
+								}}>
+								{invoiceSubmitting
+									? 'GERANDO…'
+									: 'GERAR E IMPRIMIR'}
 							</button>
 						</div>
 					</div>

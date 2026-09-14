@@ -108,3 +108,13 @@ CREATE TABLE IF NOT EXISTS invoice_transactions (
 );
 
 CREATE INDEX IF NOT EXISTS invoices_user_number_idx ON invoices (user_id, number);
+
+-- Prevent double-submit races from double-billing a transaction or issuing
+-- two invoices with the same per-user number. CREATE UNIQUE INDEX IF NOT
+-- EXISTS is used (rather than ADD CONSTRAINT) because this file is re-run
+-- idempotently on every migration, and Postgres has no
+-- ADD CONSTRAINT IF NOT EXISTS.
+CREATE UNIQUE INDEX IF NOT EXISTS invoice_transactions_user_tx_uniq
+	ON invoice_transactions (user_id, transaction_id);
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_user_number_uniq
+	ON invoices (user_id, number);
