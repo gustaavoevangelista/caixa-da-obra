@@ -1,6 +1,8 @@
 import { NextFetchEvent, NextRequest, NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
 import { SESSION_COOKIE, verifySessionToken } from '@/lib/auth';
-import { pool } from '@/lib/db';
+import { db } from '@/lib/drizzle';
+import { users } from '@/lib/schema';
 
 const PUBLIC_PATHS = ['/login'];
 
@@ -51,12 +53,12 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 	// Live check (proxy.ts runs on the Node.js runtime, so a DB round-trip
 	// here is fine) so a deactivated account is locked out immediately,
 	// not just on its next login.
-	const { rows } = await pool.query(
-		'SELECT is_active FROM users WHERE id = $1',
-		[session.sub],
-	);
+	const [row] = await db
+		.select({ isActive: users.isActive })
+		.from(users)
+		.where(eq(users.id, session.sub));
 
-	if (!rows[0]?.is_active) {
+	if (!row?.isActive) {
 		if (pathname.startsWith('/api/')) {
 			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 		}
