@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { projects } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
+
+const createProjectSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().trim().min(1),
+	status: z.enum(['active', 'ended']),
+});
 
 export async function POST(request: Request) {
 	const user = await getSessionUser();
@@ -8,25 +16,18 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const body = await request.json().catch(() => null);
-	const { id, name, status } = body ?? {};
-
-	if (
-		typeof id !== 'string' ||
-		typeof name !== 'string' ||
-		!name.trim() ||
-		(status !== 'active' && status !== 'ended')
-	) {
+	const parsed = createProjectSchema.safeParse(
+		await request.json().catch(() => null),
+	);
+	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: 'Invalid project payload' },
 			{ status: 400 },
 		);
 	}
+	const { id, name, status } = parsed.data;
 
-	await pool.query(
-		'INSERT INTO projects (id, user_id, name, status) VALUES ($1, $2, $3, $4)',
-		[id, user.id, name.trim(), status],
-	);
+	await db.insert(projects).values({ id, userId: user.id, name, status });
 
 	return NextResponse.json({ ok: true });
 }
