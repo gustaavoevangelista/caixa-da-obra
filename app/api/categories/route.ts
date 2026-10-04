@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { categories } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
+
+const createCategorySchema = z.object({
+	id: z.string().min(1),
+	type: z.enum(['expense', 'income']),
+	label: z.string().trim().min(1),
+	tag: z.string(),
+});
 
 export async function POST(request: Request) {
 	const user = await getSessionUser();
@@ -8,28 +18,25 @@ export async function POST(request: Request) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const body = await request.json().catch(() => null);
-	const { id, type, label, tag } = body ?? {};
-
-	if (
-		typeof id !== 'string' ||
-		(type !== 'expense' && type !== 'income') ||
-		typeof label !== 'string' ||
-		!label.trim() ||
-		typeof tag !== 'string'
-	) {
+	const parsed = createCategorySchema.safeParse(
+		await request.json().catch(() => null),
+	);
+	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: 'Invalid category payload' },
 			{ status: 400 },
 		);
 	}
+	const { id, type, label, tag } = parsed.data;
 
-	await pool.query(
-		`INSERT INTO categories (id, user_id, type, label, tag, position)
-		VALUES ($1, $2, $3, $4, $5,
-			COALESCE((SELECT MIN(position) FROM categories WHERE user_id = $2 AND type = $3), 0) - 1)`,
-		[id, user.id, type, label.trim(), tag],
-	);
+	await db.insert(categories).values({
+		id,
+		userId: user.id,
+		type,
+		label,
+		tag,
+		position: sql`coalesce((select min(position) from categories where user_id = ${user.id} and type = ${type}), 0) - 1`,
+	});
 
 	return NextResponse.json({ ok: true });
 }
