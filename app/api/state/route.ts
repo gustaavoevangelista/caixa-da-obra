@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { desc, eq } from 'drizzle-orm';
+import { db } from '@/lib/drizzle';
+import {
+	categories,
+	invoiceTransactions,
+	profiles,
+	projects,
+	transactions,
+} from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
 
 export async function GET() {
@@ -8,65 +16,81 @@ export async function GET() {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const [txRes, projRes, catRes, profileRes, invoicedRes] = await Promise.all([
-		pool.query(
-			`SELECT id, type, amount, category,
-				category_label AS "categoryLabel",
-				category_tag AS "categoryTag",
-				description, project_id AS "projectId", created_at AS "createdAt",
-				photo
-			FROM transactions WHERE user_id = $1 ORDER BY created_at DESC`,
-			[user.id],
-		),
-		pool.query(
-			'SELECT id, name, status FROM projects WHERE user_id = $1 ORDER BY position ASC',
-			[user.id],
-		),
-		pool.query(
-			'SELECT id, type, label, tag FROM categories WHERE user_id = $1 ORDER BY position ASC',
-			[user.id],
-		),
-		pool.query(
-			`SELECT company_name AS "companyName", company_logo AS "companyLogo",
-				selected_project AS "selectedProject"
-			FROM profiles WHERE user_id = $1`,
-			[user.id],
-		),
-		pool.query(
-			'SELECT transaction_id FROM invoice_transactions WHERE user_id = $1',
-			[user.id],
-		),
+	const [txRows, projRows, catRows, profileRows, invoicedRows] = await Promise.all([
+		db
+			.select({
+				id: transactions.id,
+				type: transactions.type,
+				amount: transactions.amount,
+				category: transactions.category,
+				categoryLabel: transactions.categoryLabel,
+				categoryTag: transactions.categoryTag,
+				description: transactions.description,
+				projectId: transactions.projectId,
+				createdAt: transactions.createdAt,
+				photo: transactions.photo,
+			})
+			.from(transactions)
+			.where(eq(transactions.userId, user.id))
+			.orderBy(desc(transactions.createdAt)),
+		db
+			.select({ id: projects.id, name: projects.name, status: projects.status })
+			.from(projects)
+			.where(eq(projects.userId, user.id))
+			.orderBy(projects.position),
+		db
+			.select({
+				id: categories.id,
+				type: categories.type,
+				label: categories.label,
+				tag: categories.tag,
+			})
+			.from(categories)
+			.where(eq(categories.userId, user.id))
+			.orderBy(categories.position),
+		db
+			.select({
+				companyName: profiles.companyName,
+				companyLogo: profiles.companyLogo,
+				selectedProject: profiles.selectedProject,
+			})
+			.from(profiles)
+			.where(eq(profiles.userId, user.id)),
+		db
+			.select({ transactionId: invoiceTransactions.transactionId })
+			.from(invoiceTransactions)
+			.where(eq(invoiceTransactions.userId, user.id)),
 	]);
 
-	const categories: {
+	const categoriesByType: {
 		expense: { id: string; label: string; tag: string }[];
 		income: { id: string; label: string; tag: string }[];
 	} = { expense: [], income: [] };
-	for (const row of catRes.rows) {
-		categories[row.type as 'expense' | 'income'].push({
+	for (const row of catRows) {
+		categoriesByType[row.type as 'expense' | 'income'].push({
 			id: row.id,
 			label: row.label,
 			tag: row.tag,
 		});
 	}
 
-	const profile = profileRes.rows[0] ?? {
+	const profile = profileRows[0] ?? {
 		companyName: '',
 		companyLogo: null,
 		selectedProject: 'general',
 	};
 
 	return NextResponse.json({
-		transactions: txRes.rows.map((row) => ({
+		transactions: txRows.map((row) => ({
 			...row,
 			amount: Number(row.amount),
-			createdAt: new Date(row.createdAt).toISOString(),
+			createdAt: row.createdAt.toISOString(),
 		})),
-		projects: projRes.rows,
-		categories,
+		projects: projRows,
+		categories: categoriesByType,
 		companyName: profile.companyName,
 		companyLogo: profile.companyLogo,
 		selectedProject: profile.selectedProject,
-		invoicedTransactionIds: invoicedRes.rows.map((row) => row.transaction_id),
+		invoicedTransactionIds: invoicedRows.map((row) => row.transactionId),
 	});
 }
