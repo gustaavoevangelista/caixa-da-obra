@@ -1,22 +1,27 @@
 import { NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { createSessionToken, SESSION_COOKIE } from '@/lib/auth';
-import { pool } from '@/lib/db';
+import { db } from '@/lib/drizzle';
+import { users } from '@/lib/schema';
+
+const loginSchema = z.object({
+	email: z.string().trim().min(1),
+});
 
 export async function POST(request: Request) {
-	const { email } = await request.json().catch(() => ({}));
-
-	if (typeof email !== 'string' || !email.trim()) {
+	const parsed = loginSchema.safeParse(await request.json().catch(() => ({})));
+	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: 'E-mail é obrigatório.' },
 			{ status: 400 },
 		);
 	}
 
-	const { rows } = await pool.query(
-		'SELECT id, email, is_active FROM users WHERE email = $1',
-		[email.trim().toLowerCase()],
-	);
-	const user = rows[0];
+	const [user] = await db
+		.select({ id: users.id, email: users.email, isActive: users.isActive })
+		.from(users)
+		.where(eq(users.email, parsed.data.email.toLowerCase()));
 
 	if (!user) {
 		return NextResponse.json(
@@ -25,7 +30,7 @@ export async function POST(request: Request) {
 		);
 	}
 
-	if (!user.is_active) {
+	if (!user.isActive) {
 		return NextResponse.json(
 			{ error: 'Contacte o administrador para regularizar sua conta.' },
 			{ status: 403 },
