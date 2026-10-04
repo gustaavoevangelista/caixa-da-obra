@@ -1,8 +1,21 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { transactions } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
 import { isUserPremium } from '@/lib/premium';
 import { MAX_RECEIPT_PHOTO_DATA_URL_LENGTH } from '@/components/receipt-photo';
+
+const updateTransactionSchema = z.object({
+	type: z.enum(['expense', 'income']),
+	amount: z.number(),
+	category: z.string(),
+	categoryLabel: z.string(),
+	categoryTag: z.string(),
+	description: z.string().optional(),
+	photo: z.string().max(MAX_RECEIPT_PHOTO_DATA_URL_LENGTH).nullable().optional(),
+});
 
 export async function PUT(
 	request: Request,
@@ -15,44 +28,38 @@ export async function PUT(
 	const premium = await isUserPremium(user.id);
 
 	const { id } = await params;
-	const body = await request.json().catch(() => null);
-	const { type, amount, category, categoryLabel, categoryTag, description, photo } =
-		body ?? {};
-
-	if (
-		(type !== 'expense' && type !== 'income') ||
-		typeof amount !== 'number' ||
-		typeof category !== 'string' ||
-		typeof categoryLabel !== 'string' ||
-		typeof categoryTag !== 'string' ||
-		(photo !== undefined && photo !== null && typeof photo !== 'string') ||
-		(typeof photo === 'string' &&
-			photo.length > MAX_RECEIPT_PHOTO_DATA_URL_LENGTH)
-	) {
+	const parsed = updateTransactionSchema.safeParse(
+		await request.json().catch(() => null),
+	);
+	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: 'Invalid transaction payload' },
 			{ status: 400 },
 		);
 	}
+	const { type, amount, category, categoryLabel, categoryTag, description, photo } =
+		parsed.data;
 
-	const result = await pool.query(
-		`UPDATE transactions
-		SET type = $1, amount = $2, category = $3, category_label = $4, category_tag = $5, description = $6,
-			photo = CASE WHEN $7 THEN $8::text ELSE photo END
-		WHERE id = $9 AND user_id = $10`,
-		[
-			type,
-			amount,
-			category,
-			categoryLabel,
-			categoryTag,
-			typeof description === 'string' ? description : '',
-			premium,
-			typeof photo === 'string' ? photo : null,
-			id,
-			user.id,
-		],
-	);
+	const values: Partial<typeof transactions.$inferInsert> = {
+		type,
+		amount: String(amount),
+		category,
+		categoryLabel,
+		categoryTag,
+		description: description ?? '',
+	};
+	// Only touch the photo column when premium — replaces the raw-SQL
+	// `CASE WHEN $7 THEN $8::text ELSE photo END`: leaving the key out of
+	// `.set()` entirely has the same effect (column untouched) as that
+	// CASE's ELSE branch.
+	if (premium) {
+		values.photo = photo ?? null;
+	}
+
+	const result = await db
+		.update(transactions)
+		.set(values)
+		.where(and(eq(transactions.id, id), eq(transactions.userId, user.id)));
 
 	if (result.rowCount === 0) {
 		return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -70,10 +77,9 @@ export async function DELETE(
 	}
 
 	const { id } = await params;
-	await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [
-		id,
-		user.id,
-	]);
+	await db
+		.delete(transactions)
+		.where(and(eq(transactions.id, id), eq(transactions.userId, user.id)));
 
 	return NextResponse.json({ ok: true });
 }

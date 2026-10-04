@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { transactions } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
 import { isUserPremium } from '@/lib/premium';
 import { MAX_RECEIPT_PHOTO_DATA_URL_LENGTH } from '@/components/receipt-photo';
+
+const createTransactionSchema = z.object({
+	id: z.string().min(1),
+	type: z.enum(['expense', 'income']),
+	amount: z.number(),
+	category: z.string(),
+	categoryLabel: z.string(),
+	categoryTag: z.string(),
+	description: z.string().optional(),
+	createdAt: z.string().optional(),
+	projectId: z.string().optional(),
+	photo: z.string().max(MAX_RECEIPT_PHOTO_DATA_URL_LENGTH).nullable().optional(),
+});
 
 export async function POST(request: Request) {
 	const user = await getSessionUser();
@@ -11,7 +26,15 @@ export async function POST(request: Request) {
 	}
 	const premium = await isUserPremium(user.id);
 
-	const body = await request.json().catch(() => null);
+	const parsed = createTransactionSchema.safeParse(
+		await request.json().catch(() => null),
+	);
+	if (!parsed.success) {
+		return NextResponse.json(
+			{ error: 'Invalid transaction payload' },
+			{ status: 400 },
+		);
+	}
 	const {
 		id,
 		type,
@@ -23,43 +46,21 @@ export async function POST(request: Request) {
 		createdAt,
 		projectId,
 		photo,
-	} = body ?? {};
+	} = parsed.data;
 
-	if (
-		typeof id !== 'string' ||
-		(type !== 'expense' && type !== 'income') ||
-		typeof amount !== 'number' ||
-		typeof category !== 'string' ||
-		typeof categoryLabel !== 'string' ||
-		typeof categoryTag !== 'string' ||
-		(photo !== undefined && photo !== null && typeof photo !== 'string') ||
-		(typeof photo === 'string' &&
-			photo.length > MAX_RECEIPT_PHOTO_DATA_URL_LENGTH)
-	) {
-		return NextResponse.json(
-			{ error: 'Invalid transaction payload' },
-			{ status: 400 },
-		);
-	}
-
-	await pool.query(
-		`INSERT INTO transactions
-			(id, user_id, type, amount, category, category_label, category_tag, description, project_id, created_at, photo)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		[
-			id,
-			user.id,
-			type,
-			amount,
-			category,
-			categoryLabel,
-			categoryTag,
-			typeof description === 'string' ? description : '',
-			typeof projectId === 'string' ? projectId : null,
-			typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
-			premium && typeof photo === 'string' ? photo : null,
-		],
-	);
+	await db.insert(transactions).values({
+		id,
+		userId: user.id,
+		type,
+		amount: String(amount),
+		category,
+		categoryLabel,
+		categoryTag,
+		description: description ?? '',
+		projectId: projectId ?? null,
+		createdAt: createdAt ? new Date(createdAt) : new Date(),
+		photo: premium && photo ? photo : null,
+	});
 
 	return NextResponse.json({ ok: true });
 }
