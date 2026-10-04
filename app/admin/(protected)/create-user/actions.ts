@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { pool } from '@/lib/db';
+import { db } from '@/lib/drizzle';
 import { provisionUser, UserAlreadyExistsError } from '@/lib/provision-user';
 
 export type CreateUserState = { error: string | null; success: string | null };
@@ -16,7 +16,7 @@ export async function createUserAction(
 	}
 
 	try {
-		const { email: createdEmail } = await provisionUser(pool, email);
+		const { email: createdEmail } = await provisionUser(db, email);
 		revalidatePath('/admin/users');
 		return { error: null, success: `Cliente "${createdEmail}" criado.` };
 	} catch (err) {
