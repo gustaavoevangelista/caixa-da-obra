@@ -1,7 +1,7 @@
 import { loadEnvConfig } from '@next/env';
-import { readFileSync } from 'fs';
-import path from 'path';
 import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
 loadEnvConfig(process.cwd());
 
@@ -11,14 +11,10 @@ async function main() {
 		throw new Error('DATABASE_URL environment variable is not set');
 	}
 
-	const schema = readFileSync(
-		path.join(process.cwd(), 'db', 'schema.sql'),
-		'utf8',
-	);
-
 	const pool = new Pool({ connectionString });
+	const db = drizzle(pool);
 	try {
-		await pool.query(schema);
+		await migrate(db, { migrationsFolder: './drizzle' });
 		console.log('Migration applied successfully.');
 	} finally {
 		await pool.end();
