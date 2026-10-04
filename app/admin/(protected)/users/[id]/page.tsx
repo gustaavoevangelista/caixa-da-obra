@@ -1,42 +1,57 @@
 import { notFound } from 'next/navigation';
-import { pool } from '@/lib/db';
+import { desc, eq } from 'drizzle-orm';
+import { db } from '@/lib/drizzle';
+import { profiles, projects, transactions, users } from '@/lib/schema';
 import { ToggleActiveButton } from './toggle-active-button';
 import { TogglePremiumButton } from './toggle-premium-button';
 
 type Params = { id: string };
 
 async function getUser(id: string) {
-	const { rows } = await pool.query(
-		`SELECT u.id, u.email, u.is_active, u.is_premium_user, u.created_at, p.company_name, p.selected_project
-		 FROM users u
-		 LEFT JOIN profiles p ON p.user_id = u.id
-		 WHERE u.id = $1`,
-		[id],
-	);
-	return rows[0] ?? null;
+	const [row] = await db
+		.select({
+			id: users.id,
+			email: users.email,
+			isActive: users.isActive,
+			isPremiumUser: users.isPremiumUser,
+			createdAt: users.createdAt,
+			companyName: profiles.companyName,
+			selectedProject: profiles.selectedProject,
+		})
+		.from(users)
+		.leftJoin(profiles, eq(profiles.userId, users.id))
+		.where(eq(users.id, id));
+	return row ?? null;
 }
 
 async function getProjects(userId: string) {
-	const { rows } = await pool.query(
-		`SELECT id, name, status, created_at
-		 FROM projects
-		 WHERE user_id = $1
-		 ORDER BY position ASC`,
-		[userId],
-	);
-	return rows;
+	return db
+		.select({
+			id: projects.id,
+			name: projects.name,
+			status: projects.status,
+			createdAt: projects.createdAt,
+		})
+		.from(projects)
+		.where(eq(projects.userId, userId))
+		.orderBy(projects.position);
 }
 
 async function getRecentTransactions(userId: string) {
-	const { rows } = await pool.query(
-		`SELECT id, type, amount, category_label, description, project_id, created_at
-		 FROM transactions
-		 WHERE user_id = $1
-		 ORDER BY created_at DESC
-		 LIMIT 50`,
-		[userId],
-	);
-	return rows;
+	return db
+		.select({
+			id: transactions.id,
+			type: transactions.type,
+			amount: transactions.amount,
+			categoryLabel: transactions.categoryLabel,
+			description: transactions.description,
+			projectId: transactions.projectId,
+			createdAt: transactions.createdAt,
+		})
+		.from(transactions)
+		.where(eq(transactions.userId, userId))
+		.orderBy(desc(transactions.createdAt))
+		.limit(50);
 }
 
 export default async function AdminUserDetailPage({
@@ -48,7 +63,7 @@ export default async function AdminUserDetailPage({
 	const user = await getUser(id);
 	if (!user) notFound();
 
-	const [projects, transactions] = await Promise.all([
+	const [projectRows, transactionRows] = await Promise.all([
 		getProjects(id),
 		getRecentTransactions(id),
 	]);
@@ -61,23 +76,23 @@ export default async function AdminUserDetailPage({
 						{user.email}
 					</h1>
 					<p className='text-sm text-slate-400'>
-						Empresa: {user.company_name || '—'} · Cliente desde{' '}
-						{new Date(user.created_at).toLocaleDateString('pt-PT')}
+						Empresa: {user.companyName || '—'} · Cliente desde{' '}
+						{user.createdAt.toLocaleDateString('pt-PT')}
 					</p>
 				</div>
 			</div>
-			
+
 			<div className='flex items-center gap-2'>
 				<TogglePremiumButton
 					userId={user.id}
-					isPremiumUser={user.is_premium_user}
+					isPremiumUser={user.isPremiumUser}
 				/>
-				<ToggleActiveButton userId={user.id} isActive={user.is_active} />
+				<ToggleActiveButton userId={user.id} isActive={user.isActive} />
 			</div>
 
 			<section className='flex flex-col gap-3'>
 				<h2 className='text-sm font-semibold text-slate-100'>
-					Obras ({projects.length})
+					Obras ({projectRows.length})
 				</h2>
 				<div className='overflow-x-auto rounded-lg border border-slate-800'>
 					<table className='w-full text-left text-sm'>
@@ -88,7 +103,7 @@ export default async function AdminUserDetailPage({
 							</tr>
 						</thead>
 						<tbody>
-							{projects.map((project) => (
+							{projectRows.map((project) => (
 								<tr
 									key={project.id}
 									className='border-b border-slate-900 last:border-0'
@@ -101,7 +116,7 @@ export default async function AdminUserDetailPage({
 									</td>
 								</tr>
 							))}
-							{projects.length === 0 ? (
+							{projectRows.length === 0 ? (
 								<tr>
 									<td
 										colSpan={2}
@@ -134,21 +149,19 @@ export default async function AdminUserDetailPage({
 							</tr>
 						</thead>
 						<tbody>
-							{transactions.map((tx) => (
+							{transactionRows.map((tx) => (
 								<tr
 									key={tx.id}
 									className='border-b border-slate-900 last:border-0'
 								>
 									<td className='px-4 py-3 text-slate-400'>
-										{new Date(tx.created_at).toLocaleDateString(
-											'pt-PT',
-										)}
+										{tx.createdAt.toLocaleDateString('pt-PT')}
 									</td>
 									<td className='px-4 py-3 text-slate-400'>
 										{tx.type === 'income' ? 'Entrada' : 'Saída'}
 									</td>
 									<td className='px-4 py-3 text-slate-400'>
-										{tx.category_label}
+										{tx.categoryLabel}
 									</td>
 									<td className='px-4 py-3 text-slate-400'>
 										{tx.description || '—'}
@@ -161,7 +174,7 @@ export default async function AdminUserDetailPage({
 									</td>
 								</tr>
 							))}
-							{transactions.length === 0 ? (
+							{transactionRows.length === 0 ? (
 								<tr>
 									<td
 										colSpan={5}
