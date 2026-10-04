@@ -1,3 +1,5 @@
+import type { ExportReportMode } from './export-options.ts';
+
 export type ReportTransaction = {
 	id: string;
 	type: 'expense' | 'income';
@@ -49,13 +51,16 @@ export function getMonthPeriod(date: Date): ReportPeriod {
 }
 
 export function getWeekPeriod(date: Date): ReportPeriod {
-	const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
+	// Weeks run Monday to Sunday (pt-PT); getDay() is 0 on Sunday.
+	const daysSinceMonday = (date.getDay() + 6) % 7;
+	const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() - daysSinceMonday);
 	const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+	const lastDay = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
 
 	return {
 		start,
 		end,
-		label: `${start.toLocaleDateString('pt-PT')} - ${end.toLocaleDateString('pt-PT')}`,
+		label: `${start.toLocaleDateString('pt-PT')} - ${lastDay.toLocaleDateString('pt-PT')}`,
 	};
 }
 
@@ -65,6 +70,16 @@ export function getYearPeriod(year: number): ReportPeriod {
 		end: new Date(year + 1, 0, 1),
 		label: String(year),
 	};
+}
+
+export function getExportPeriod(
+	mode: ExportReportMode,
+	now: Date,
+	reportMonthDate: Date,
+): ReportPeriod {
+	if (mode === 'week') return getWeekPeriod(now);
+	if (mode === 'month') return getMonthPeriod(reportMonthDate);
+	return getYearPeriod(reportMonthDate.getFullYear());
 }
 
 export function buildReportData(

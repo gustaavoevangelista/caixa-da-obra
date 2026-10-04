@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	buildReportData,
+	getExportPeriod,
 	getMonthPeriod,
 	getWeekPeriod,
 	getYearPeriod,
@@ -28,7 +29,7 @@ const transactions: ReportTransaction[] = [
 		categoryLabel: 'Materiais',
 		categoryTag: 'MAT',
 		description: 'Cement',
-		createdAt: '2026-08-09T10:00:00.000Z',
+		createdAt: '2026-08-10T09:00:00.000Z',
 		projectId: 'project-a',
 	},
 	{
@@ -58,7 +59,7 @@ const transactions: ReportTransaction[] = [
 test('buildReportData summarizes a week from provided scoped transactions', () => {
 	const report = buildReportData(
 		transactions.filter((t) => t.projectId === 'project-a'),
-		getWeekPeriod(new Date(2026, 7, 1)),
+		getWeekPeriod(new Date(2026, 7, 10)),
 	);
 
 	assert.equal(report.income, 1000);
@@ -72,6 +73,77 @@ test('buildReportData summarizes a week from provided scoped transactions', () =
 		{ label: 'Materiais', tag: 'MAT', total: 125 },
 	]);
 	assert.deepEqual(report.items.map((t) => t.id), ['income-1', 'expense-1']);
+});
+
+test('getWeekPeriod runs Monday to Sunday for any day of the week', () => {
+	// 2026-08-10 is a Monday, 2026-08-16 is a Sunday
+	for (const day of [10, 11, 12, 13, 14, 15, 16]) {
+		const period = getWeekPeriod(new Date(2026, 7, day, 15, 30));
+
+		assert.deepEqual(period.start, new Date(2026, 7, 10));
+		assert.deepEqual(period.end, new Date(2026, 7, 17));
+	}
+});
+
+test('getWeekPeriod labels the last day of the week, not the exclusive end', () => {
+	assert.equal(
+		getWeekPeriod(new Date(2026, 7, 12)).label,
+		'10/08/2026 - 16/08/2026',
+	);
+});
+
+test('getWeekPeriod handles weeks that cross a month and year boundary', () => {
+	const period = getWeekPeriod(new Date(2026, 0, 1)); // Thursday
+
+	assert.deepEqual(period.start, new Date(2025, 11, 29));
+	assert.deepEqual(period.end, new Date(2026, 0, 5));
+	assert.equal(period.label, '29/12/2025 - 04/01/2026');
+});
+
+test('buildReportData for a week excludes the neighbouring Sunday and Monday', () => {
+	const at = (day: number, hour: number, minute = 0) =>
+		new Date(2026, 7, day, hour, minute).toISOString();
+	const edge = (id: string, createdAt: string): ReportTransaction => ({
+		id,
+		type: 'expense',
+		amount: 10,
+		category: 'materials',
+		categoryLabel: 'Materiais',
+		categoryTag: 'MAT',
+		description: id,
+		createdAt,
+		projectId: null,
+	});
+
+	const report = buildReportData(
+		[
+			edge('prev-sunday-late', at(9, 23, 59)),
+			edge('monday-start', at(10, 0)),
+			edge('sunday-end', at(16, 23, 59)),
+			edge('next-monday-start', at(17, 0)),
+		],
+		getWeekPeriod(new Date(2026, 7, 13)),
+	);
+
+	assert.deepEqual(report.items.map((t) => t.id), [
+		'sunday-end',
+		'monday-start',
+	]);
+});
+
+test('getExportPeriod uses the current week for week exports, regardless of the month shown', () => {
+	const now = new Date(2026, 8, 21); // Monday 21 Sep 2026
+	const shownMonth = new Date(2026, 5, 1); // user navigated back to June
+
+	assert.deepEqual(getExportPeriod('week', now, shownMonth), getWeekPeriod(now));
+});
+
+test('getExportPeriod uses the shown month and its year for month and year exports', () => {
+	const now = new Date(2026, 8, 21);
+	const shownMonth = new Date(2025, 5, 1);
+
+	assert.deepEqual(getExportPeriod('month', now, shownMonth), getMonthPeriod(shownMonth));
+	assert.deepEqual(getExportPeriod('year', now, shownMonth), getYearPeriod(2025));
 });
 
 test('buildReportData summarizes a month from provided scoped transactions', () => {

@@ -4,10 +4,12 @@ CREATE TABLE IF NOT EXISTS users (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	email TEXT UNIQUE NOT NULL,
 	is_active BOOLEAN NOT NULL DEFAULT true,
+	is_premium_user BOOLEAN NOT NULL DEFAULT false,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium_user BOOLEAN NOT NULL DEFAULT false;
 
 -- Migrate a users table created by an earlier revision (username +
 -- password_hash) to the current email-only shape.

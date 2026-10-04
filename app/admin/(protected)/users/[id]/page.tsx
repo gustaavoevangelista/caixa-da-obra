@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation';
 import { pool } from '@/lib/db';
 import { ToggleActiveButton } from './toggle-active-button';
+import { TogglePremiumButton } from './toggle-premium-button';
 
 type Params = { id: string };
 
 async function getUser(id: string) {
 	const { rows } = await pool.query(
-		`SELECT u.id, u.email, u.is_active, u.created_at, p.company_name, p.selected_project
+		`SELECT u.id, u.email, u.is_active, u.is_premium_user, u.created_at, p.company_name, p.selected_project
 		 FROM users u
 		 LEFT JOIN profiles p ON p.user_id = u.id
 		 WHERE u.id = $1`,
@@ -64,6 +65,13 @@ export default async function AdminUserDetailPage({
 						{new Date(user.created_at).toLocaleDateString('pt-PT')}
 					</p>
 				</div>
+			</div>
+			
+			<div className='flex items-center gap-2'>
+				<TogglePremiumButton
+					userId={user.id}
+					isPremiumUser={user.is_premium_user}
+				/>
 				<ToggleActiveButton userId={user.id} isActive={user.is_active} />
 			</div>
 

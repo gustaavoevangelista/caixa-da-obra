@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getSessionUser } from '@/lib/session';
+import { isUserPremium } from '@/lib/premium';
 import { MAX_RECEIPT_PHOTO_DATA_URL_LENGTH } from '@/components/receipt-photo';
 
 export async function PUT(
@@ -11,6 +12,7 @@ export async function PUT(
 	if (!user) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
+	const premium = await isUserPremium(user.id);
 
 	const { id } = await params;
 	const body = await request.json().catch(() => null);
@@ -35,8 +37,9 @@ export async function PUT(
 
 	const result = await pool.query(
 		`UPDATE transactions
-		SET type = $1, amount = $2, category = $3, category_label = $4, category_tag = $5, description = $6, photo = $7
-		WHERE id = $8 AND user_id = $9`,
+		SET type = $1, amount = $2, category = $3, category_label = $4, category_tag = $5, description = $6,
+			photo = CASE WHEN $7 THEN $8::text ELSE photo END
+		WHERE id = $9 AND user_id = $10`,
 		[
 			type,
 			amount,
@@ -44,6 +47,7 @@ export async function PUT(
 			categoryLabel,
 			categoryTag,
 			typeof description === 'string' ? description : '',
+			premium,
 			typeof photo === 'string' ? photo : null,
 			id,
 			user.id,

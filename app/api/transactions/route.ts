@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getSessionUser } from '@/lib/session';
+import { isUserPremium } from '@/lib/premium';
 import { MAX_RECEIPT_PHOTO_DATA_URL_LENGTH } from '@/components/receipt-photo';
 
 export async function POST(request: Request) {
@@ -8,6 +9,7 @@ export async function POST(request: Request) {
 	if (!user) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
+	const premium = await isUserPremium(user.id);
 
 	const body = await request.json().catch(() => null);
 	const {
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
 			typeof description === 'string' ? description : '',
 			typeof projectId === 'string' ? projectId : null,
 			typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
-			typeof photo === 'string' ? photo : null,
+			premium && typeof photo === 'string' ? photo : null,
 		],
 	);
 

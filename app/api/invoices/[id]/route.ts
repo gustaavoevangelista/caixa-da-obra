@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getSessionUser } from '@/lib/session';
+import { isUserPremium } from '@/lib/premium';
 
 export async function GET(
 	_request: Request,
@@ -9,6 +10,9 @@ export async function GET(
 	const user = await getSessionUser();
 	if (!user) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	}
+	if (!(await isUserPremium(user.id))) {
+		return NextResponse.json({ error: 'Premium required' }, { status: 403 });
 	}
 
 	const { id } = await params;
