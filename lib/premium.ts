@@ -1,9 +1,11 @@
-import { pool } from './db';
+import { eq } from 'drizzle-orm';
+import { db } from './drizzle';
+import { users } from './schema';
 
 export async function isUserPremium(userId: string): Promise<boolean> {
-	const { rows } = await pool.query(
-		'SELECT is_premium_user FROM users WHERE id = $1',
-		[userId],
-	);
-	return rows[0]?.is_premium_user === true;
+	const [row] = await db
+		.select({ isPremiumUser: users.isPremiumUser })
+		.from(users)
+		.where(eq(users.id, userId));
+	return row?.isPremiumUser === true;
 }
