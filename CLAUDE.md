@@ -13,7 +13,8 @@ A separate native mobile app (not in this repo) is a client of the `/pricing` fl
 ```bash
 npm run dev            # next dev (localhost:3000)
 npm run build          # next build
-npm run db:migrate     # applies db/schema.sql to $DATABASE_URL
+npm run db:migrate     # applies pending Drizzle migrations (drizzle/) to $DATABASE_URL
+npx drizzle-kit generate   # after editing lib/schema.ts, writes a new migration file under drizzle/
 npm run user:create -- <email>   # provision a customer from the CLI
 
 npx tsc --noEmit                              # type-check (no lint script or ESLint config exists)
@@ -23,7 +24,7 @@ node --test components/invoices.test.ts       # single test file
 
 Tests use the built-in `node:test` runner on Node's native TypeScript support (no Jest/Vitest), so test files and the modules they import must use explicit `.ts` extensions in relative imports (`./invoices.ts`). Only the pure modules in `components/` are tested; API routes and the UI have no tests.
 
-`scripts/*.ts` run through `tsx` and load `.env.local` themselves with `loadEnvConfig`.
+`scripts/*.ts` run through `tsx` and load `.env.local` themselves with `loadEnvConfig`. They construct their own standalone `pg.Pool`/Drizzle `db` instance rather than importing `lib/db.ts`'s shared `pool` or `lib/drizzle.ts`'s shared `db`, since they run outside Next's module graph. `drizzle.config.ts` (used by `drizzle-kit generate`, not by the app itself) does the same.
 
 ## Environment (`.env.local`, git-ignored)
 
@@ -45,11 +46,12 @@ Next 16 renamed middleware to `proxy.ts`. It runs on the Node runtime and is the
 
 **`/admin` and `/pricing`** — Clerk. `proxy.ts` lazy-imports `clerkMiddleware` only for these prefixes, and each subtree has its own scoped `<ClerkProvider>` (`app/admin/layout.tsx`, `app/pricing/layout.tsx`). The customer app must never import Clerk. `clerkMiddleware` must run for `/pricing` even though it's public, or server-side `auth()`/`currentUser()` throws. `/admin/(protected)/layout.tsx` additionally requires the Clerk primary email to be in `ADMIN_EMAILS`, else renders `NotAuthorized`.
 
-## Data model (`db/schema.sql`)
+## Data model (`lib/schema.ts`)
 
-Postgres via one shared `pg` Pool (`lib/db.ts`, cached on `global` outside production to survive HMR). No ORM; routes hand-write SQL with `$n` params.
+Postgres via [Drizzle ORM](https://orm.drizzle.team) (`drizzle-orm/node-postgres`) over one shared `pg` Pool. `lib/db.ts` exports that `Pool` (cached on `global` outside production to survive HMR, unchanged); `lib/schema.ts` is the **canonical schema** (tables, checks, indexes, composite keys/FKs) — there is no separate SQL schema file; `lib/drizzle.ts` exports the `db` query-builder instance (same HMR-caching pattern as `lib/db.ts`'s `pool`). Almost every route builds queries with `db.select/insert/update/delete`; the one holdout is the `categories.position` prepend subquery (`app/api/categories/route.ts`), which uses Drizzle's `sql` template tag for a `COALESCE(MIN(...)) - 1` expression that doesn't map to the query builder.
 
-- **Migrations are a single idempotent file re-run in full** by `scripts/migrate.ts`. Schema changes go in `db/schema.sql` as `IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, or guarded `DO $$` blocks — no numbered migration files, and nothing that fails on a second run. It already contains a one-off block migrating the old `username`/`password_hash` users shape to email-only.
+**Migrations:** edit `lib/schema.ts`, run `npx drizzle-kit generate` to produce a new file under `drizzle/`, commit it, then `npm run db:migrate` (now a thin wrapper around `drizzle-orm/node-postgres/migrator`'s `migrate()`, see `scripts/migrate.ts`) applies whatever hasn't run yet. `drizzle/0000_enable_pgcrypto.sql` and `drizzle/0001_baseline_schema.sql` are the baseline — they reproduce the schema that used to be hand-written in `db/schema.sql`. Production's migration-tracking table (`drizzle.__drizzle_migrations`) must be seeded by hand to mark both as already-applied rather than re-run (see `docs/superpowers/plans/2026-10-04-drizzle-orm-integration.md`, Task 3); `db/schema.sql` is deleted only once that's confirmed.
+
 - **Tenant tables** (`profiles`, `projects`, `categories`, `transactions`, `invoices`, `invoice_transactions`) all key on `user_id` with composite primary keys `(user_id, id)` (`(user_id, type, id)` for categories). Ids are **client-generated text** (`${Date.now()}-${random}`). Every query must filter by `user_id`; the composite key is what makes ids unique per tenant.
 - `users`: `email` (unique, stored lowercased), `is_active`, `is_premium_user`. `profiles` is 1:1 (`company_name`, `company_logo` as data URL, `selected_project`).
 - `projects.status` is `'active' | 'ended'`. The UI's "Geral" view is the pseudo-project id `'general'` (`GENERAL` in `components/site-ledger/types.ts`); transactions with no project have `project_id NULL`. There is **no FK** from `transactions.project_id` (or `invoices.project_id`) to projects, so `DELETE /api/projects/:id` nulls the references by hand inside a transaction.
@@ -60,7 +62,7 @@ Postgres via one shared `pg` Pool (`lib/db.ts`, cached on `global` outside produ
 
 ## HTTP API (`app/api`)
 
-All customer routes follow the same shape: `getSessionUser()` → 401 `{error}`; body via `await request.json().catch(() => null)`; hand-rolled `typeof` validation (no zod) → 400; SQL scoped by `user_id`; respond `{ ok: true }`. Dynamic-route `params` is a `Promise` (awaited).
+All customer routes follow the same shape: `getSessionUser()` → 401 `{error}`; body parsed with a route-local `zod` schema (`schema.safeParse(await request.json().catch(() => null))`) → 400 on failure, using the same static error string the route always returned (not zod's field-level messages, to keep the response contract stable); every Drizzle query scoped by `user_id` (`eq(table.userId, user.id)`); respond `{ ok: true }`. Dynamic-route `params` is a `Promise` (awaited). The `/api/invoices` POST handler runs its checks and writes inside `db.transaction(async (tx) => {...})`; because Drizzle only rolls back a transaction when the callback throws (not on an early `return`), its two business-rule failures (unknown transaction id, already-invoiced id) are thrown as local error classes and mapped to their HTTP status after the `db.transaction(...)` call, not inside it.
 
 | Route | Methods | Notes |
 |---|---|---|
