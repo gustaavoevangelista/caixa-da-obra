@@ -75,7 +75,7 @@ All customer routes follow the same shape: `getSessionUser()` → 401 `{error}`;
 
 ## Premium gating
 
-`users.is_premium_user` gates receipt photos (silently dropped on non-premium writes) and the whole invoices feature. Enforce it server-side with `isUserPremium()` (`lib/premium.ts`, one query per call). `app/page.tsx` passes `isPremiumUser` / `isAdmin` props to the UI purely for presentation.
+`users.is_premium_user` gates receipt photos (silently dropped on non-premium writes), the whole invoices feature, and voice commands. Enforce it server-side with `isUserPremium()` (`lib/premium.ts`, one query per call). `app/page.tsx` passes `isPremiumUser` / `isAdmin` props to the UI purely for presentation — except for voice commands, which run entirely in the browser (no API route), so hiding the mic button in `index.tsx` is their only gate; the transactions they produce go through the normal `/api/transactions` route.
 
 The flag is written only by `toggleUserPremiumAction` (admin user-detail page, `toggle-premium-button.tsx`). Nothing in this repo listens for Clerk/Stripe subscription events, so a completed checkout does not by itself flip the flag.
 
@@ -102,6 +102,7 @@ The native app opens `/pricing?app_redirect=<url>` in a system browser (separate
   - `useProjectManagement` — add-project modal + manage-projects section
   - `useCategoryManagement` — manage-categories section
   - `useProfile` — profile modal, logo resize, logout (owns its own `useRouter()`)
+  - `useVoiceCommand` — Web Speech API (`pt-PT`, browser-provided, no key or backend) listening state. Runs with `continuous = true` and ends the session itself via timers (`VOICE_SILENCE_TIMEOUT_MS` after the last words, `VOICE_NO_SPEECH_TIMEOUT_MS` if nothing is said, `VOICE_MAX_LISTEN_MS` cap), always with `stop()` so pending results still arrive. Android Chrome and iOS Safari end runs on their own after a short pause despite `continuous`, so `onend` restarts recognition (keeping the text so far, up to `VOICE_MAX_RESTARTS`) unless our timer/CONCLUIR requested the stop (`stopRequestedRef`); the browser's `no-speech` error is ignored for the same reason; segments are merged by `joinRecognitionResults` (handles Android's cumulative repeats). The transcript then goes through the rule-based `parseVoiceCommand` on the client. The result never saves directly: it opens the transaction sheet via `useTransactionSheet.openPrefilled` for the user to confirm. A project named in the command ("… obra silva") becomes the sheet's `projectOverride`: the entry is saved to that project and the sheet's project label shows it, but `selectedProject` is left unchanged
 - `components/` — presentational only, no data fetching: `Header`, `BalanceCard`, `ProjectSelector` (owns its drag-scroll), `TransactionRow`/`TransactionList`, `HomeView`, `ExportMenuButton`, `CategoryBarList`, `ReportsView`, `InvoiceCandidateList`/`InvoiceHistoryList`/`InvoiceSelectionBar`, `InvoicesView`, `TransactionSheet`, `InvoiceSheet`, `AddProjectModal`, `ProfileModal`, `ManageProjectsSection`/`ManageCategoriesSection`/`ManageModal`, `PhotoLightbox`, `GlobalStyles`
 - `types.ts` — shared types (`Transaction`, `Project`, `InvoiceSummary`/`InvoiceDetail`, `SavedCategories`, `GENERAL`)
 - `utils.ts` — `api`, `formatMoney`, `todayKey`, `dayLabel`, `escapeHtml`
@@ -116,7 +117,7 @@ Key patterns:
 - Every overlay (transaction/invoice sheet, add-project/profile/manage modals, photo lightbox) is rendered by `index.tsx` as an `absolute inset-0` sibling in the same order as before, so their z-index stacking (20/30/40) still depends on that DOM order — don't hoist one of these into a child component's own JSX subtree, it'll change what it can stack above.
 - Styling mixes Tailwind classes with inline styles using CSS variables (`--bg-card`, `--line`, `--text-dim`, …) defined in `components/site-ledger/components/GlobalStyles.tsx` (rendered once by `index.tsx`), not in `app/globals.css`, which only has the Tailwind import and base resets.
 
-Pure logic lives in tested siblings, and new non-trivial logic should go there rather than into the feature folder above: `reporting.ts` (period math + `buildReportData` aggregation), `invoices.ts` (`nextInvoiceNumber`, `sumTransactionAmounts`), `receipt-photo.ts` (canvas resize to ≤1600px JPEG q0.8 + size limit shared with the API routes), `export-options.ts` (menu labels), `print-window.ts` (window features).
+Pure logic lives in tested siblings, and new non-trivial logic should go there rather than into the feature folder above: `reporting.ts` (period math + `buildReportData` aggregation), `invoices.ts` (`nextInvoiceNumber`, `sumTransactionAmounts`), `receipt-photo.ts` (canvas resize to ≤1600px JPEG q0.8 + size limit shared with the API routes), `export-options.ts` (menu labels), `print-window.ts` (window features), `voice-command.ts` (rule-based parser for spoken commands: type words, amount, category label/synonym and project-name matching).
 
 ## Conventions
 

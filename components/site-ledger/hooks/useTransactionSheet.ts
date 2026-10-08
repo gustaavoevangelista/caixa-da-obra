@@ -30,6 +30,8 @@ export function useTransactionSheet({
 	const [photoError, setPhotoError] = useState<string | null>(null);
 	const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 	const [editingId, setEditingId] = useState<string | null>(null);
+	// Project named in a voice command; saves there without changing selectedProject.
+	const [projectOverride, setProjectOverride] = useState<string | null>(null);
 	const sheetOpenTokenRef = useRef(0);
 	const [sheetDeleteConfirm, setSheetDeleteConfirm] = useState(false);
 	const [longPressId, setLongPressId] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export function useTransactionSheet({
 		setDescription('');
 		setSaveError(false);
 		setEditingId(null);
+		setProjectOverride(null);
 		setSheetDeleteConfirm(false);
 		setPhotoDraft(null);
 		setPhotoError(null);
@@ -51,6 +54,25 @@ export function useTransactionSheet({
 	const openSheet = () => {
 		sheetOpenTokenRef.current += 1;
 		resetSheet();
+		setSheetOpen(true);
+	};
+
+	// New-entry sheet with fields filled from a voice command; the user still confirms.
+	const openPrefilled = (draft: {
+		type: TransactionType;
+		amount: number | null;
+		categoryId: string | null;
+		projectId: string | null;
+		description: string;
+	}) => {
+		sheetOpenTokenRef.current += 1;
+		resetSheet();
+		const cats = draft.type === 'expense' ? categories.expense : categories.income;
+		setProjectOverride(draft.projectId);
+		setTxType(draft.type);
+		setAmount(draft.amount ? String(draft.amount) : '');
+		setCategory(cats.some((c) => c.id === draft.categoryId) ? draft.categoryId : null);
+		setDescription(draft.description);
 		setSheetOpen(true);
 	};
 
@@ -159,7 +181,8 @@ export function useTransactionSheet({
 			categoryTag: catObj.tag,
 			description: description.trim(),
 			createdAt: new Date().toISOString(),
-			projectId: selectedProject === GENERAL ? null : selectedProject,
+			projectId:
+				projectOverride ?? (selectedProject === GENERAL ? null : selectedProject),
 			photo: photoDraft,
 		};
 		setSaving(true);
@@ -235,6 +258,7 @@ export function useTransactionSheet({
 		lightboxPhoto,
 		setLightboxPhoto,
 		editingId,
+		projectOverride,
 		sheetDeleteConfirm,
 		setSheetDeleteConfirm,
 		longPressId,
@@ -242,6 +266,7 @@ export function useTransactionSheet({
 		activeCats,
 		canSave,
 		openSheet,
+		openPrefilled,
 		openEditSheet,
 		closeSheet,
 		pressDigit,
