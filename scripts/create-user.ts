@@ -1,5 +1,7 @@
 import { loadEnvConfig } from '@next/env';
 import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from '../lib/schema';
 import { provisionUser, UserAlreadyExistsError } from '../lib/provision-user';
 
 loadEnvConfig(process.cwd());
@@ -18,8 +20,9 @@ async function main() {
 	}
 
 	const pool = new Pool({ connectionString });
+	const db = drizzle(pool, { schema });
 	try {
-		const { userId, email } = await provisionUser(pool, rawEmail);
+		const { userId, email } = await provisionUser(db, rawEmail);
 		console.log(`User "${email}" created (id: ${userId}).`);
 	} catch (err) {
 		if (err instanceof UserAlreadyExistsError) {

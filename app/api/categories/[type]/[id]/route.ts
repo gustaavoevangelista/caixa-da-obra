@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { categories } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
+
+const typeParamSchema = z.enum(['expense', 'income']);
 
 export async function DELETE(
 	_request: Request,
@@ -12,14 +17,20 @@ export async function DELETE(
 	}
 
 	const { type, id } = await params;
-	if (type !== 'expense' && type !== 'income') {
+	const parsedType = typeParamSchema.safeParse(type);
+	if (!parsedType.success) {
 		return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
 	}
 
-	await pool.query(
-		'DELETE FROM categories WHERE user_id = $1 AND type = $2 AND id = $3',
-		[user.id, type, id],
-	);
+	await db
+		.delete(categories)
+		.where(
+			and(
+				eq(categories.userId, user.id),
+				eq(categories.type, parsedType.data),
+				eq(categories.id, id),
+			),
+		);
 
 	return NextResponse.json({ ok: true });
 }

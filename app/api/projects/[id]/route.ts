@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { projects, transactions } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
+
+const updateProjectSchema = z.object({
+	status: z.enum(['active', 'ended']),
+});
 
 export async function PUT(
 	request: Request,
@@ -12,20 +19,20 @@ export async function PUT(
 	}
 
 	const { id } = await params;
-	const body = await request.json().catch(() => null);
-	const { status } = body ?? {};
-
-	if (status !== 'active' && status !== 'ended') {
+	const parsed = updateProjectSchema.safeParse(
+		await request.json().catch(() => null),
+	);
+	if (!parsed.success) {
 		return NextResponse.json(
 			{ error: 'Invalid project payload' },
 			{ status: 400 },
 		);
 	}
 
-	const result = await pool.query(
-		'UPDATE projects SET status = $1 WHERE id = $2 AND user_id = $3',
-		[status, id, user.id],
-	);
+	const result = await db
+		.update(projects)
+		.set({ status: parsed.data.status })
+		.where(and(eq(projects.id, id), eq(projects.userId, user.id)));
 
 	if (result.rowCount === 0) {
 		return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -43,24 +50,17 @@ export async function DELETE(
 	}
 
 	const { id } = await params;
-	const client = await pool.connect();
-	try {
-		await client.query('BEGIN');
-		await client.query(
-			'DELETE FROM projects WHERE id = $1 AND user_id = $2',
-			[id, user.id],
-		);
-		await client.query(
-			'UPDATE transactions SET project_id = NULL WHERE project_id = $1 AND user_id = $2',
-			[id, user.id],
-		);
-		await client.query('COMMIT');
-	} catch (err) {
-		await client.query('ROLLBACK');
-		throw err;
-	} finally {
-		client.release();
-	}
+	await db.transaction(async (tx) => {
+		await tx
+			.delete(projects)
+			.where(and(eq(projects.id, id), eq(projects.userId, user.id)));
+		await tx
+			.update(transactions)
+			.set({ projectId: null })
+			.where(
+				and(eq(transactions.projectId, id), eq(transactions.userId, user.id)),
+			);
+	});
 
 	return NextResponse.json({ ok: true });
 }

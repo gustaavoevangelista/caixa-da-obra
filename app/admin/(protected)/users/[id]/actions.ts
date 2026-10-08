@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { currentUser } from '@clerk/nextjs/server';
-import { pool } from '@/lib/db';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/drizzle';
+import { users } from '@/lib/schema';
 import { isAdminEmail } from '@/lib/admin-auth';
 
 async function assertIsAdmin() {
@@ -18,10 +20,7 @@ async function assertIsAdmin() {
 
 export async function toggleUserActiveAction(userId: string, isActive: boolean) {
 	await assertIsAdmin();
-	await pool.query('UPDATE users SET is_active = $1 WHERE id = $2', [
-		isActive,
-		userId,
-	]);
+	await db.update(users).set({ isActive }).where(eq(users.id, userId));
 	revalidatePath(`/admin/users/${userId}`);
 }
 
@@ -30,9 +29,6 @@ export async function toggleUserPremiumAction(
 	isPremiumUser: boolean,
 ) {
 	await assertIsAdmin();
-	await pool.query('UPDATE users SET is_premium_user = $1 WHERE id = $2', [
-		isPremiumUser,
-		userId,
-	]);
+	await db.update(users).set({ isPremiumUser }).where(eq(users.id, userId));
 	revalidatePath(`/admin/users/${userId}`);
 }

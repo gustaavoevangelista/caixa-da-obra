@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { and, eq } from 'drizzle-orm';
+import { db } from '@/lib/drizzle';
+import { invoices } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
 import { isUserPremium } from '@/lib/premium';
 
@@ -16,14 +18,20 @@ export async function GET(
 	}
 
 	const { id } = await params;
-	const result = await pool.query(
-		`SELECT id, number, client_name AS "clientName", client_nif AS "clientNif",
-			description, total, project_id AS "projectId", issued_at AS "issuedAt"
-		FROM invoices WHERE id = $1 AND user_id = $2`,
-		[id, user.id],
-	);
+	const [invoice] = await db
+		.select({
+			id: invoices.id,
+			number: invoices.number,
+			clientName: invoices.clientName,
+			clientNif: invoices.clientNif,
+			description: invoices.description,
+			total: invoices.total,
+			projectId: invoices.projectId,
+			issuedAt: invoices.issuedAt,
+		})
+		.from(invoices)
+		.where(and(eq(invoices.id, id), eq(invoices.userId, user.id)));
 
-	const invoice = result.rows[0];
 	if (!invoice) {
 		return NextResponse.json({ error: 'Not found' }, { status: 404 });
 	}

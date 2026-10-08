@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '@/lib/drizzle';
+import { profiles } from '@/lib/schema';
 import { getSessionUser } from '@/lib/session';
+
+const updateProfileSchema = z
+	.object({
+		companyName: z.string(),
+		companyLogo: z.string().nullable(),
+		selectedProject: z.string(),
+	})
+	.partial();
 
 export async function PUT(request: Request) {
 	const user = await getSessionUser();
@@ -8,38 +19,25 @@ export async function PUT(request: Request) {
 		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
-	const body = await request.json().catch(() => ({}));
-	const sets: string[] = [];
-	const values: unknown[] = [];
-
-	if ('companyName' in body) {
-		values.push(typeof body.companyName === 'string' ? body.companyName : '');
-		sets.push(`company_name = $${values.length}`);
-	}
-	if ('companyLogo' in body) {
-		values.push(
-			typeof body.companyLogo === 'string' ? body.companyLogo : null,
+	const parsed = updateProfileSchema.safeParse(
+		await request.json().catch(() => ({})),
+	);
+	if (!parsed.success) {
+		return NextResponse.json(
+			{ error: 'Invalid profile payload' },
+			{ status: 400 },
 		);
-		sets.push(`company_logo = $${values.length}`);
-	}
-	if ('selectedProject' in body) {
-		values.push(
-			typeof body.selectedProject === 'string'
-				? body.selectedProject
-				: 'general',
-		);
-		sets.push(`selected_project = $${values.length}`);
 	}
 
-	if (sets.length === 0) {
+	const updates = parsed.data;
+	if (Object.keys(updates).length === 0) {
 		return NextResponse.json({ error: 'No fields provided' }, { status: 400 });
 	}
 
-	values.push(user.id);
-	await pool.query(
-		`UPDATE profiles SET ${sets.join(', ')}, updated_at = now() WHERE user_id = $${values.length}`,
-		values,
-	);
+	await db
+		.update(profiles)
+		.set({ ...updates, updatedAt: new Date() })
+		.where(eq(profiles.userId, user.id));
 
 	return NextResponse.json({ ok: true });
 }

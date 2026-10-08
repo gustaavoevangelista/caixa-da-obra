@@ -1,25 +1,23 @@
 import Link from 'next/link';
-import { pool } from '@/lib/db';
+import { desc, eq } from 'drizzle-orm';
+import { db } from '@/lib/drizzle';
+import { profiles, users } from '@/lib/schema';
 
-type UserRow = {
-	id: string;
-	email: string;
-	company_name: string | null;
-	created_at: string;
-};
-
-async function getUsers(): Promise<UserRow[]> {
-	const { rows } = await pool.query(
-		`SELECT u.id, u.email, p.company_name, u.created_at
-		 FROM users u
-		 LEFT JOIN profiles p ON p.user_id = u.id
-		 ORDER BY u.created_at DESC`,
-	);
-	return rows;
+async function getUsers() {
+	return db
+		.select({
+			id: users.id,
+			email: users.email,
+			companyName: profiles.companyName,
+			createdAt: users.createdAt,
+		})
+		.from(users)
+		.leftJoin(profiles, eq(profiles.userId, users.id))
+		.orderBy(desc(users.createdAt));
 }
 
 export default async function AdminUsersPage() {
-	const users = await getUsers();
+	const rows = await getUsers();
 
 	return (
 		<div className='flex flex-col gap-4'>
@@ -34,30 +32,28 @@ export default async function AdminUsersPage() {
 						</tr>
 					</thead>
 					<tbody>
-						{users.map((user) => (
+						{rows.map((row) => (
 							<tr
-								key={user.id}
+								key={row.id}
 								className='border-b border-slate-900 last:border-0'
 							>
 								<td className='px-4 py-3'>
 									<Link
-										href={`/admin/users/${user.id}`}
+										href={`/admin/users/${row.id}`}
 										className='text-slate-100 hover:underline'
 									>
-										{user.email}
+										{row.email}
 									</Link>
 								</td>
 								<td className='px-4 py-3 text-slate-400'>
-									{user.company_name || '—'}
+									{row.companyName || '—'}
 								</td>
 								<td className='px-4 py-3 text-slate-400'>
-									{new Date(user.created_at).toLocaleDateString(
-										'pt-BR',
-									)}
+									{row.createdAt.toLocaleDateString('pt-BR')}
 								</td>
 							</tr>
 						))}
-						{users.length === 0 ? (
+						{rows.length === 0 ? (
 							<tr>
 								<td
 									colSpan={3}
