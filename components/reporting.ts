@@ -36,6 +36,16 @@ export type ReportData = {
 	items: ReportTransaction[];
 };
 
+export function filterByPeriod<T extends { createdAt: string }>(
+	transactions: T[],
+	period: ReportPeriod,
+): T[] {
+	return transactions.filter((t) => {
+		const createdAt = new Date(t.createdAt);
+		return createdAt >= period.start && createdAt < period.end;
+	});
+}
+
 export function getMonthPeriod(date: Date): ReportPeriod {
 	const start = new Date(date.getFullYear(), date.getMonth(), 1);
 	const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
@@ -86,11 +96,7 @@ export function buildReportData(
 	transactions: ReportTransaction[],
 	period: ReportPeriod,
 ): ReportData {
-	const items = transactions
-		.filter((t) => {
-			const createdAt = new Date(t.createdAt);
-			return createdAt >= period.start && createdAt < period.end;
-		})
+	const items = filterByPeriod(transactions, period)
 		.sort(
 			(a, b) =>
 				new Date(b.createdAt).getTime() -

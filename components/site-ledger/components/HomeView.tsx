@@ -1,19 +1,25 @@
 import { Plus } from 'lucide-react';
 import type { Project, Transaction } from '../types';
 import { BalanceCard } from './BalanceCard';
+import { MonthNavigator } from './MonthNavigator';
 import { ProjectSelector } from './ProjectSelector';
 import { TransactionList } from './TransactionList';
 
 export function HomeView({
-	balance,
+	monthLabel,
+	monthOffset,
+	onChangeMonthOffset,
+	monthNet,
 	monthIncome,
 	monthExpense,
+	totalBalance,
 	projects,
 	selectedProject,
 	onSelectProject,
 	onAddProject,
 	onManageProjects,
 	grouped,
+	hasAnyTransactions,
 	now,
 	longPressId,
 	deletingId,
@@ -24,15 +30,20 @@ export function HomeView({
 	onConfirmDelete,
 	onOpenSheet,
 }: {
-	balance: number;
+	monthLabel: string;
+	monthOffset: number;
+	onChangeMonthOffset: (updater: (offset: number) => number) => void;
+	monthNet: number;
 	monthIncome: number;
 	monthExpense: number;
+	totalBalance: number;
 	projects: Project[];
 	selectedProject: string;
 	onSelectProject: (id: string) => void;
 	onAddProject: () => void;
 	onManageProjects: () => void;
 	grouped: Array<{ key: string; dateStr: string; items: Transaction[] }>;
+	hasAnyTransactions: boolean;
 	now: Date;
 	longPressId: string | null;
 	deletingId: string | null;
@@ -45,10 +56,18 @@ export function HomeView({
 }) {
 	return (
 		<>
+			<MonthNavigator
+				label={monthLabel}
+				monthOffset={monthOffset}
+				onChangeMonthOffset={onChangeMonthOffset}
+				className='mx-5 mb-4'
+			/>
+
 			<BalanceCard
-				balance={balance}
+				monthNet={monthNet}
 				monthIncome={monthIncome}
 				monthExpense={monthExpense}
+				totalBalance={totalBalance}
 			/>
 
 			<ProjectSelector
@@ -62,6 +81,7 @@ export function HomeView({
 
 			<TransactionList
 				grouped={grouped}
+				hasAnyTransactions={hasAnyTransactions}
 				now={now}
 				longPressId={longPressId}
 				deletingId={deletingId}

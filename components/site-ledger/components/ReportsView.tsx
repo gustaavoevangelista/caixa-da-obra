@@ -1,14 +1,14 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ExportReportMode } from '../../export-options';
 import type { ReportData } from '../../reporting';
 import type { Project } from '../types';
 import { formatMoney } from '../utils';
 import { CategoryBarList } from './CategoryBarList';
 import { ExportMenuButton } from './ExportMenuButton';
+import { MonthNavigator } from './MonthNavigator';
 import { ProjectSelector } from './ProjectSelector';
 
 export function ReportsView({
-	reportMonthDate,
+	monthLabel,
 	monthOffset,
 	onChangeMonthOffset,
 	projects,
@@ -22,7 +22,7 @@ export function ReportsView({
 	exportError,
 	reportData,
 }: {
-	reportMonthDate: Date;
+	monthLabel: string;
 	monthOffset: number;
 	onChangeMonthOffset: (updater: (offset: number) => number) => void;
 	projects: Project[];
@@ -38,33 +38,11 @@ export function ReportsView({
 }) {
 	return (
 		<div className='flex-1 overflow-y-auto sl-scrollbar-none px-5 pb-10 sl-fade-enter'>
-			<div className='flex items-center justify-between mb-5'>
-				<button
-					onClick={() => onChangeMonthOffset((o) => o - 1)}
-					className='w-9 h-9 rounded-full flex items-center justify-center'
-					style={{
-						background: 'var(--bg-raised)',
-						border: '1px solid var(--line)',
-					}}>
-					<ChevronLeft size={16} />
-				</button>
-				<div className='sl-display text-2xl' style={{ color: 'var(--yellow)' }}>
-					{reportMonthDate
-						.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-						.toUpperCase()}
-				</div>
-				<button
-					onClick={() => onChangeMonthOffset((o) => Math.min(0, o + 1))}
-					disabled={monthOffset === 0}
-					className='w-9 h-9 rounded-full flex items-center justify-center'
-					style={{
-						background: 'var(--bg-raised)',
-						border: '1px solid var(--line)',
-						opacity: monthOffset === 0 ? 0.35 : 1,
-					}}>
-					<ChevronRight size={16} />
-				</button>
-			</div>
+			<MonthNavigator
+				label={monthLabel}
+				monthOffset={monthOffset}
+				onChangeMonthOffset={onChangeMonthOffset}
+			/>
 
 			<div className='-mx-5'>
 				<ProjectSelector

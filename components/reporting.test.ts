@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	buildReportData,
+	filterByPeriod,
 	getExportPeriod,
 	getMonthPeriod,
 	getWeekPeriod,
@@ -184,4 +185,37 @@ test('buildReportData summarizes the full year from provided scoped transactions
 		'expense-1',
 		'expense-2',
 	]);
+});
+
+test('filterByPeriod keeps the first instant of the month and drops the first instant of the next', () => {
+	const period = getMonthPeriod(new Date(2026, 7, 15));
+	const rows = [
+		{ id: 'first', createdAt: new Date(2026, 7, 1).toISOString() },
+		{ id: 'last', createdAt: new Date(2026, 7, 31, 23, 59, 59).toISOString() },
+		{ id: 'next-month', createdAt: new Date(2026, 8, 1).toISOString() },
+		{ id: 'prev-month', createdAt: new Date(2026, 6, 31, 23, 59, 59).toISOString() },
+	];
+
+	assert.deepEqual(
+		filterByPeriod(rows, period).map((t) => t.id),
+		['first', 'last'],
+	);
+});
+
+test('filterByPeriod preserves extra fields and input order', () => {
+	const period = getMonthPeriod(new Date(2026, 7, 1));
+	const rows = transactions.map((t) => ({ ...t, photo: `photo-${t.id}` }));
+
+	const result = filterByPeriod(rows, period);
+
+	assert.deepEqual(result.map((t) => t.id), [
+		'income-1',
+		'expense-1',
+		'other-project',
+	]);
+	assert.equal(result[0].photo, 'photo-income-1');
+});
+
+test('getMonthPeriod labels the month in Portuguese', () => {
+	assert.equal(getMonthPeriod(new Date(2026, 9, 8)).label, 'outubro de 2026');
 });

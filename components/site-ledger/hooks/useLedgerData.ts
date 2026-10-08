@@ -4,6 +4,7 @@ import {
 	INCOME_CATEGORIES,
 	type Category,
 } from '@/lib/default-categories';
+import { filterByPeriod, type ReportPeriod } from '../../reporting';
 import {
 	GENERAL,
 	type InvoiceSummary,
@@ -14,7 +15,7 @@ import {
 } from '../types';
 import { api, todayKey } from '../utils';
 
-export function useLedgerData({ now }: { now: Date }) {
+export function useLedgerData({ period }: { period: ReportPeriod }) {
 	const [transactions, setTransactions] = useState<Transaction[]>([]);
 	const [loaded, setLoaded] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
@@ -281,21 +282,6 @@ export function useLedgerData({ now }: { now: Date }) {
 		);
 	}, [scopedForStats]);
 
-	const thisMonthTotals = useMemo(() => {
-		const y = now.getFullYear();
-		const m = now.getMonth();
-		let income = 0;
-		let expense = 0;
-		scopedForStats.forEach((t) => {
-			const d = new Date(t.createdAt);
-			if (d.getFullYear() === y && d.getMonth() === m) {
-				if (t.type === 'income') income += t.amount;
-				else expense += t.amount;
-			}
-		});
-		return { income, expense };
-	}, [scopedForStats, now]);
-
 	const scopedTransactions = useMemo(
 		() =>
 			selectedProject === GENERAL
@@ -305,7 +291,7 @@ export function useLedgerData({ now }: { now: Date }) {
 	);
 
 	const grouped = useMemo(() => {
-		const sorted = [...scopedTransactions].sort(
+		const sorted = filterByPeriod(scopedTransactions, period).sort(
 			(a, b) =>
 				new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 		);
@@ -330,7 +316,7 @@ export function useLedgerData({ now }: { now: Date }) {
 			currentArr!.items.push(t);
 		});
 		return groups;
-	}, [scopedTransactions]);
+	}, [scopedTransactions, period]);
 
 	const selectedProjectName =
 		selectedProject === GENERAL
@@ -359,7 +345,6 @@ export function useLedgerData({ now }: { now: Date }) {
 		persistProfile,
 		recordInvoice,
 		balance,
-		thisMonthTotals,
 		scopedTransactions,
 		grouped,
 		selectedProjectName,

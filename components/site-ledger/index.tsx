@@ -20,6 +20,7 @@ import { useLedgerData } from './hooks/useLedgerData';
 import { useProfile } from './hooks/useProfile';
 import { useProjectManagement } from './hooks/useProjectManagement';
 import { useReports } from './hooks/useReports';
+import { useSelectedMonth } from './hooks/useSelectedMonth';
 import { useTransactionSheet } from './hooks/useTransactionSheet';
 import { useVoiceCommand } from './hooks/useVoiceCommand';
 
@@ -35,12 +36,19 @@ export default function SiteLedger({
 	const now = useMemo(() => new Date(), []);
 	const [view, setView] = useState<ViewName>('home');
 
-	const ledger = useLedgerData({ now });
+	const month = useSelectedMonth({ now });
+	const monthLabel = month.period.label;
+
+	const ledger = useLedgerData({ period: month.period });
 
 	const txSheet = useTransactionSheet({
 		categories: ledger.categories,
 		selectedProject: ledger.selectedProject,
-		createTransaction: ledger.createTransaction,
+		// New entries are dated now, so jump back to the current month to show them.
+		createTransaction: (entry) => {
+			month.setMonthOffset(0);
+			return ledger.createTransaction(entry);
+		},
 		updateTransaction: ledger.updateTransaction,
 		deleteTransaction: ledger.deleteTransaction,
 	});
@@ -60,7 +68,8 @@ export default function SiteLedger({
 	});
 
 	const reports = useReports({
-		now,
+		reportMonthDate: month.monthDate,
+		reportPeriod: month.period,
 		scopedTransactions: ledger.scopedTransactions,
 		selectedProjectName: ledger.selectedProjectName,
 	});
@@ -149,15 +158,20 @@ export default function SiteLedger({
 					</div>
 				) : view === 'home' ? (
 					<HomeView
-						balance={ledger.balance}
-						monthIncome={ledger.thisMonthTotals.income}
-						monthExpense={ledger.thisMonthTotals.expense}
+						monthLabel={monthLabel}
+						monthOffset={month.monthOffset}
+						onChangeMonthOffset={month.setMonthOffset}
+						monthNet={reports.reportData.net}
+						monthIncome={reports.reportData.income}
+						monthExpense={reports.reportData.expense}
+						totalBalance={ledger.balance}
 						projects={ledger.projects}
 						selectedProject={ledger.selectedProject}
 						onSelectProject={ledger.selectProject}
 						onAddProject={() => projectMgmt.setAddProjectOpen(true)}
 						onManageProjects={openManageModal}
 						grouped={ledger.grouped}
+						hasAnyTransactions={ledger.scopedTransactions.length > 0}
 						now={now}
 						longPressId={txSheet.longPressId}
 						deletingId={txSheet.deletingId}
@@ -170,9 +184,9 @@ export default function SiteLedger({
 					/>
 				) : view === 'reports' ? (
 					<ReportsView
-						reportMonthDate={reports.reportMonthDate}
-						monthOffset={reports.monthOffset}
-						onChangeMonthOffset={reports.setMonthOffset}
+						monthLabel={monthLabel}
+						monthOffset={month.monthOffset}
+						onChangeMonthOffset={month.setMonthOffset}
 						projects={ledger.projects}
 						selectedProject={ledger.selectedProject}
 						onSelectProject={ledger.selectProject}

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
 	buildReportData,
 	getExportPeriod,
-	getMonthPeriod,
+	type ReportPeriod,
 } from '../../reporting';
 import type { ExportReportMode } from '../../export-options';
 import { PRINT_WINDOW_FEATURES } from '../../print-window';
@@ -10,39 +10,22 @@ import { buildPrintableReportHtml } from '../print-templates';
 import type { Transaction } from '../types';
 
 export function useReports({
-	now,
+	reportMonthDate,
+	reportPeriod,
 	scopedTransactions,
 	selectedProjectName,
 }: {
-	now: Date;
+	reportMonthDate: Date;
+	reportPeriod: ReportPeriod;
 	scopedTransactions: Transaction[];
 	selectedProjectName: string;
 }) {
-	const [monthOffset, setMonthOffset] = useState(0);
 	const [exportError, setExportError] = useState(false);
 	const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
-	const reportMonthDate = useMemo(
-		() => new Date(now.getFullYear(), now.getMonth() + monthOffset, 1),
-		[now, monthOffset],
-	);
-
-	const reportPeriod = useMemo(
-		() => getMonthPeriod(reportMonthDate),
-		[reportMonthDate],
-	);
 	const reportData = useMemo(
 		() => buildReportData(scopedTransactions, reportPeriod),
 		[scopedTransactions, reportPeriod],
-	);
-
-	const currentMonthLabel = useMemo(
-		() =>
-			reportMonthDate.toLocaleDateString('pt-PT', {
-				month: 'long',
-				year: 'numeric',
-			}),
-		[reportMonthDate],
 	);
 
 	const exportReportPdf = (mode: ExportReportMode) => {
@@ -84,15 +67,10 @@ export function useReports({
 	};
 
 	return {
-		monthOffset,
-		setMonthOffset,
 		exportError,
 		exportMenuOpen,
 		setExportMenuOpen,
-		reportMonthDate,
-		reportPeriod,
 		reportData,
-		currentMonthLabel,
 		exportReportPdf,
 	};
 }
