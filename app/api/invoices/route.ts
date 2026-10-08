@@ -12,7 +12,7 @@ const createInvoiceSchema = z.object({
 	clientNif: z.string().trim().min(1),
 	description: z.string().trim().min(1),
 	transactionIds: z.array(z.string()).min(1),
-	projectId: z.string().optional(),
+	projectId: z.string().nullable().optional(),
 });
 
 export async function GET() {

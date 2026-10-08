@@ -15,7 +15,7 @@ const createTransactionSchema = z.object({
 	categoryTag: z.string(),
 	description: z.string().optional(),
 	createdAt: z.string().optional(),
-	projectId: z.string().optional(),
+	projectId: z.string().nullable().optional(),
 	photo: z.string().max(MAX_RECEIPT_PHOTO_DATA_URL_LENGTH).nullable().optional(),
 });
 
