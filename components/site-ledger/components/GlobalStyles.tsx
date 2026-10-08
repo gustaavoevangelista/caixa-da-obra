@@ -37,6 +37,8 @@ export function GlobalStyles() {
         .sl-spin { animation: slSpin 0.8s linear infinite; }
         @keyframes slSpin { to { transform: rotate(360deg); } }
         .sl-scrollbar-none::-webkit-scrollbar { display: none; }
+        .sl-pulse { animation: slPulse 1.4s ease-out infinite; }
+        @keyframes slPulse { 0% { box-shadow: 0 0 0 0 rgba(244,196,48,0.55); } 100% { box-shadow: 0 0 0 22px rgba(244,196,48,0); } }
       `}</style>
 	);
 }

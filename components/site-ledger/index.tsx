@@ -12,6 +12,8 @@ import { PhotoLightbox } from './components/PhotoLightbox';
 import { ProfileModal } from './components/ProfileModal';
 import { ReportsView } from './components/ReportsView';
 import { TransactionSheet } from './components/TransactionSheet';
+import { VoiceButton } from './components/VoiceButton';
+import { VoiceOverlay } from './components/VoiceOverlay';
 import { useCategoryManagement } from './hooks/useCategoryManagement';
 import { useInvoiceFlow } from './hooks/useInvoiceFlow';
 import { useLedgerData } from './hooks/useLedgerData';
@@ -19,6 +21,7 @@ import { useProfile } from './hooks/useProfile';
 import { useProjectManagement } from './hooks/useProjectManagement';
 import { useReports } from './hooks/useReports';
 import { useTransactionSheet } from './hooks/useTransactionSheet';
+import { useVoiceCommand } from './hooks/useVoiceCommand';
 
 type ViewName = 'home' | 'reports' | 'invoices';
 
@@ -40,6 +43,12 @@ export default function SiteLedger({
 		createTransaction: ledger.createTransaction,
 		updateTransaction: ledger.updateTransaction,
 		deleteTransaction: ledger.deleteTransaction,
+	});
+
+	const voice = useVoiceCommand({
+		categories: ledger.categories,
+		projects: ledger.projects,
+		onDraft: txSheet.openPrefilled,
 	});
 
 	const invoiceFlow = useInvoiceFlow({
@@ -78,8 +87,30 @@ export default function SiteLedger({
 
 	const openManageModal = () => projectMgmt.setManageOpen(true);
 
+	const anyOverlayOpen =
+		txSheet.sheetOpen ||
+		invoiceFlow.invoiceSheetOpen ||
+		projectMgmt.addProjectOpen ||
+		profile.profileOpen ||
+		projectMgmt.manageOpen ||
+		txSheet.lightboxPhoto !== null;
+	const showVoiceButton =
+		isPremiumUser &&
+		ledger.loaded &&
+		voice.supported &&
+		voice.status === 'idle' &&
+		!anyOverlayOpen &&
+		// keep clear of the sticky invoice selection bar
+		!(view === 'invoices' && invoiceFlow.selectedInvoiceTransactions.length > 0);
+
 	const editingProjectContextLabel = useMemo(() => {
-		if (!txSheet.editingId) return ledger.selectedProjectName;
+		if (!txSheet.editingId) {
+			if (!txSheet.projectOverride) return ledger.selectedProjectName;
+			return (
+				ledger.projects.find((p) => p.id === txSheet.projectOverride)?.name ||
+				ledger.selectedProjectName
+			);
+		}
 		const editingTx = ledger.transactions.find((t) => t.id === txSheet.editingId);
 		return (
 			ledger.projects.find((p) => p.id === editingTx?.projectId)?.name ||
@@ -87,6 +118,7 @@ export default function SiteLedger({
 		);
 	}, [
 		txSheet.editingId,
+		txSheet.projectOverride,
 		ledger.transactions,
 		ledger.projects,
 		ledger.selectedProjectName,
@@ -284,6 +316,19 @@ export default function SiteLedger({
 					<PhotoLightbox
 						photo={txSheet.lightboxPhoto}
 						onClose={() => txSheet.setLightboxPhoto(null)}
+					/>
+				)}
+
+				{showVoiceButton && <VoiceButton onClick={voice.start} />}
+
+				{voice.status !== 'idle' && (
+					<VoiceOverlay
+						status={voice.status}
+						transcript={voice.transcript}
+						error={voice.error}
+						onStop={voice.stop}
+						onRetry={voice.start}
+						onCancel={voice.cancel}
 					/>
 				)}
 			</div>
